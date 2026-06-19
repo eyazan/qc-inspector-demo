@@ -109,3 +109,10 @@ class HealthResponse(BaseModel):
     status: str
     app: str
     version: str
+
+
+class ErrorResponse(BaseModel):
+    status: str = "error"
+    stage: str
+    message: str
+    details: dict = Field(default_factory=dict)

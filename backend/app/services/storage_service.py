@@ -11,6 +11,7 @@ logger = get_logger(__name__)
 
 METADATA_FILENAME = "metadata.json"
 FINAL_REPORT_FILENAME = "final_report.md"
+FINAL_REPORT_JSON_FILENAME = "final_report.json"
 SEGMENT_MARKER = "__seg__"
 
 
@@ -75,6 +76,27 @@ class StorageService:
         target = self.run_path(run_id) / "reports" / FINAL_REPORT_FILENAME
         target.write_text(content, encoding="utf-8")
         return FINAL_REPORT_FILENAME
+
+    def save_final_report_json(self, run_id: str, report: dict) -> str:
+        target = self.run_path(run_id) / "reports" / FINAL_REPORT_JSON_FILENAME
+        target.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return FINAL_REPORT_JSON_FILENAME
+
+    def read_final_report_json(self, run_id: str) -> Optional[dict]:
+        target = self.run_path(run_id) / "reports" / FINAL_REPORT_JSON_FILENAME
+        if not target.exists():
+            return None
+        return json.loads(target.read_text(encoding="utf-8"))
+
+    def save_segment_findings(self, run_id: str, index: int, findings: dict) -> str:
+        filename = f"segment_{index}.json"
+        target = self.run_path(run_id) / "comparison" / filename
+        target.write_text(
+            json.dumps(findings, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return filename
 
     def write_metadata(self, run_id: str, metadata: dict) -> None:
         target = self.run_path(run_id) / METADATA_FILENAME

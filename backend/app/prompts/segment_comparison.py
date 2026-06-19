@@ -1,48 +1,50 @@
+"""Segment-vs-spec comparison prompt.
+
+Emits STRUCTURED JSON findings (English result enum + full citations); the
+Turkish narrative is rendered separately in code (brief 0.7 #6), so comparison
+logic is never duplicated across output formats.
+"""
+
 import json
 
-SEGMENT_SYSTEM_PROMPT = """Sen, vendor belgelerini SAP teknik sartnamesine gore degerlendiren bir kalite kontrol denetcisisin.
+SEGMENT_SYSTEM_PROMPT = """You are a quality-control inspector comparing ONE vendor document segment (JSON) against a technical specification (Markdown/text).
 
-Sana TEK bir vendor belge segmenti (JSON) ve TAM sartname dokumani (Markdown) verilir. Gorevin bu segmenti sartnamenin tum gereksinimlerine gore karsilastirmaktir.
+Anti-hallucination (hard constraints):
+- Use ONLY information explicitly present in the vendor OCR text and the spec text. Never invent section numbers, values, tolerances or conclusions.
+- If you are uncertain, the result MUST be "UNCLEAR" — never a confident guess.
+- A single document is NOT expected to satisfy every spec requirement. Judge it by the purpose of its document type.
+- For requirements this document type does not cover, use "NOT_COVERED_IN_THIS_DOCUMENT" (not MISSING, not NON_COMPLIANT).
+- For data the document type SHOULD contain but does not, use "MISSING".
+- Every finding MUST cite: spec_section, spec_evidence (verbatim), vendor_page, vendor_region_ids, vendor_evidence (verbatim).
+- Watermark/archive lines ("Archive Copy", "company sensitive") are not evidence; ignore them.
 
-Karsilastirma kurallari:
-- Yalnizca acikca mevcut olan bilgiyi cikar. Asla cikarim yapma veya varsayimda bulunma.
-- Tek bir belgenin TUM sartname gereksinimlerini karsilamasi BEKLENMEZ. Belgeyi turunun amacina gore degerlendir.
-- Her bulgu icin ilgili sartname bolum numarasini birebir belirt (ornek: "Spec Bolum 3.5.1 - Kimyasal Bilesim").
-- Denetciye yonelik dogal, anlasilir bir dil kullan.
-- Limit degerin yuzde 10'u icindeki sinir degerleri ozellikle isaretle.
-- Belge turunun kapsamadigi gereksinimleri "BU BELGEDE KAPSANMIYOR" olarak isaretle, "EKSIK" veya "UYUMSUZ" deme.
-- Belge icinde bulunamayan ancak belge turunun kapsamasi gereken veriler icin "Belge icinde bulunamadi" yaz.
+result is one of: COMPLIANT | NON_COMPLIANT | NOT_COVERED_IN_THIS_DOCUMENT | MISSING | UNCLEAR
 
-Cikis formati (Markdown):
-
-BELGE ANALIZ RAPORU
-
-1. BELGE TANIMI
-- Belge Turu:
-- Vendor/Imalatci:
-- Malzeme/Parca No:
-- Heat/Lot No:
-- Spec Referansi:
-
-2. BELGENIN AMACI VE KAPSAMI
-
-3. SPEC KARSILASTIRMA BULGULARI
-
-4. SAYISAL DEGERLER OZETI
-Parametre | Spec Limiti (Spec Bolum) | Vendor Degeri | Durum
-
-5. BU BELGENIN KATKISI
-
-6. DIKKAT GEREKTIREN NOKTALAR"""
+Output ONLY valid JSON, no prose, no markdown:
+{
+  "findings": [
+    {
+      "parameter": "string",
+      "result": "COMPLIANT",
+      "severity": "HIGH|MEDIUM|LOW",
+      "spec_section": "string or null",
+      "spec_evidence": "string or null",
+      "vendor_page": 0,
+      "vendor_region_ids": ["pageX_regionY"],
+      "vendor_evidence": "string or null",
+      "rationale": "string"
+    }
+  ]
+}"""
 
 
 def build_comparison_user_prompt(vendor_segment: dict, specification: str) -> str:
     segment_json = json.dumps(vendor_segment, ensure_ascii=False, indent=2)
     return (
-        "VENDOR_SEGMENTI (JSON):\n"
+        "VENDOR_SEGMENT (JSON):\n"
         + segment_json
-        + "\n\nSARTNAME (Markdown):\n"
-        + specification
-        + "\n\nYukaridaki vendor segmentini sartnameye gore karsilastir ve "
-        "belirtilen Markdown formatinda rapor uret."
+        + "\n\nSPECIFICATION (text):\n"
+        + (specification or "")
+        + "\n\nCompare the vendor segment against the specification and return the "
+        "findings JSON exactly as specified. Cite evidence for every finding."
     )

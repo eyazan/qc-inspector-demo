@@ -59,12 +59,34 @@ class MockLlmProvider(LlmProvider):
         )
 
     def _comparison(self) -> str:
-        return (
-            "BELGE ANALIZ RAPORU (mock)\n\n"
-            "1. BELGE TANIMI\n- Belge Turu: other\n\n"
-            "3. SPEC KARSILASTIRMA BULGULARI\n"
-            "- Kimyasal bilesim: UYUMLU (mock)\n"
-            "- Mekanik testler: BU BELGEDE KAPSANMIYOR\n"
+        return json.dumps(
+            {
+                "findings": [
+                    {
+                        "parameter": "Kimyasal bilesim (Al)",
+                        "result": "COMPLIANT",
+                        "severity": "LOW",
+                        "spec_section": "3.1",
+                        "spec_evidence": "min 5.50 max 6.75 Aluminum",
+                        "vendor_page": 1,
+                        "vendor_region_ids": ["page1_region0"],
+                        "vendor_evidence": "Al 6.10",
+                        "rationale": "Vendor Al 6.10 spec araliginda (mock).",
+                    },
+                    {
+                        "parameter": "Mekanik testler",
+                        "result": "NOT_COVERED_IN_THIS_DOCUMENT",
+                        "severity": "MEDIUM",
+                        "spec_section": "3.5",
+                        "spec_evidence": "Tensile strength min 130 ksi",
+                        "vendor_page": 1,
+                        "vendor_region_ids": ["page1_region1"],
+                        "vendor_evidence": None,
+                        "rationale": "Bu belge turu mekanik testleri kapsamaz (mock).",
+                    },
+                ]
+            },
+            ensure_ascii=False,
         )
 
     def _aggregation(self) -> str:

@@ -1,11 +1,13 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.errors import PipelineStageError
 from app.core.logging import configure_logging, get_logger
 
 configure_logging()
@@ -19,6 +21,15 @@ async def lifespan(app: FastAPI):
     settings.output_path.mkdir(parents=True, exist_ok=True)
     settings.spec_source_dir.mkdir(parents=True, exist_ok=True)
     settings.spec_index_dir.mkdir(parents=True, exist_ok=True)
+    settings.spec_output_dir.mkdir(parents=True, exist_ok=True)
+    # Initialize the relational store (runs / findings / overrides). Previously
+    # never called, so the override/report-pdf routes had no tables to use.
+    try:
+        from app.core.database import init_db
+
+        init_db()
+    except Exception:  # noqa: BLE001
+        logger.exception("init_db basarisiz — DB-tabanli ozellikler devre disi")
     logger.info("%s %s started", settings.app_name, settings.app_version)
     yield
 
@@ -37,6 +48,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(PipelineStageError)
+    async def _pipeline_stage_error_handler(request: Request, exc: PipelineStageError):
+        return JSONResponse(status_code=400, content=exc.to_dict())
 
     app.include_router(api_router)
 

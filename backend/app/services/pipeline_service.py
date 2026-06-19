@@ -27,6 +27,7 @@ from app.services.metadata_extraction_service import MetadataExtractionService
 from app.services.ocr import OcrPipeline
 from app.services.ocr.models import DocumentSegment
 from app.services.pipeline_state import get_run_state, drop_run_state
+from app.services.report_renderer import render_turkish_narrative
 from app.services.segmentation_service import SegmentationService
 from app.services.storage_service import StorageService
 
@@ -118,6 +119,7 @@ class PipelineService:
                 sap_spec_text=lookup.spec_text or "",
                 spec_doc_status=lookup.message,
                 spec_lookup_source=lookup.source,
+                spec_referenced=lookup.references,
             )
             if lookup.status == "found" and lookup.file_path:
                 src = Path(lookup.file_path)
@@ -169,20 +171,34 @@ class PipelineService:
                 run_id, vendor_pdf.stem, [r.to_dict() for r in regions]
             )
 
-            # Segmentasyon (orijinal mantik)
+            # Segmentasyon
             state.update("Belgeler segmentlere ayriliyor", 60)
             segments = segmentation.segment(regions)
             state.log(f"{len(segments)} segment tespit edildi")
 
-            # Karsilastirma (orijinal mantik)
-            segment_reports = self._compare_segments(
+            # Segment bazli yapisal karsilastirma (JSON findings)
+            segment_findings = self._compare_segments(
                 run_id, segments, specification, comparison, state
             )
 
-            # Aggregation (orijinal mantik)
+            # Deterministik capraz-belge uzlastirma -> yapisal final_report
             state.update("Nihai rapor olusturuluyor", 95)
-            final_report = aggregation.aggregate(segment_reports)
-            self._storage.save_final_report(run_id, final_report)
+            final_report = aggregation.aggregate(
+                segment_findings, referenced_specs=preview.get("spec_referenced")
+            )
+            final_report["dedup_stats"] = preview.get("dedup_stats")
+
+            # Insan-okur Turkce anlati (ayni findings'ten render)
+            run_meta = {
+                "po_number": preview.get("po_number"),
+                "po_item": preview.get("po_item"),
+                "material": preview.get("material"),
+                "sap_spec_name": preview.get("sap_spec_name"),
+            }
+            final_report_text = render_turkish_narrative(final_report, run_meta)
+
+            self._storage.save_final_report_json(run_id, final_report)
+            self._storage.save_final_report(run_id, final_report_text)
 
             self._write_metadata(run_id, preview, segments)
             self._storage.clear_inputs()
@@ -198,22 +214,23 @@ class PipelineService:
 
     def _compare_segments(self, run_id, segments, specification, comparison, state) -> list[dict]:
         state.update("Segmentler spec ile karsilastiriliyor", 80)
-        reports = []
+        segment_findings = []
         total = max(len(segments), 1)
         for index, segment in enumerate(segments, start=1):
-            report_text = comparison.compare(segment, specification)
-            filename = self._storage.save_segment_report(run_id, index, report_text)
-            reports.append(
-                {
-                    "doc_type": segment.doc_type,
-                    "content": report_text,
-                    "index": index,
-                    "filename": filename,
-                }
+            findings = comparison.compare(segment, specification)
+            # Insan-okur segment ozeti (frontend segment goruntusu icin)
+            seg_report = {"segment_index": index, "doc_type": segment.doc_type, "findings": findings}
+            self._storage.save_segment_report(
+                run_id, index, render_turkish_narrative(
+                    {"findings": findings, "summary": {}, "total_findings": len(findings)},
+                    {},
+                )
             )
+            self._storage.save_segment_findings(run_id, index, seg_report)
+            segment_findings.append(seg_report)
             progress = 80 + int(15 * index / total)
             state.update(f"Segment {index}/{total} karsilastirildi", progress)
-        return reports
+        return segment_findings
 
     def _write_metadata(self, run_id, preview, segments) -> None:
         mount = self._storage._static_mount
