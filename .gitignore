@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Secrets / local config — never commit real values
+.env
+*.env
+!.env.example
+
+# Local model weights (pulled on demand via scripts/download_models.py)
+backend/models/**
+!backend/models/.gitkeep
+
+# Runtime data (job outputs, uploaded PDFs, spec store db/artifacts)
+backend/data/**
+!backend/data/.gitkeep
+!backend/data/spec_store/mock_specs/**
+
+# TLS material — paths are config-driven; do not commit private keys
+*.key
+*.pem
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Node (frontend is frozen; its build output should not be tracked here)
+node_modules/
+frontend/build/
+
+# Local working artifacts
+_extracted/
+.meta/

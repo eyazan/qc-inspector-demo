@@ -1,0 +1,12 @@
+# Heavy ML stack — install only on the machine that runs LOCAL layout detection
+# (PP-DocLayoutV3 via paddlex). On the MacBook this is CPU; on the GPU box it can
+# use CUDA by setting LAYOUT_DEVICE=cuda (no code change).
+#
+# Versions are intentionally unpinned: paddle wheels are platform/Python
+# specific. Follow paddlex install docs for your platform, then:
+#     pip install -r requirements-ml.txt
+#
+# PaddleOCR-VL is REMOTE (OCR_SERVICE_URL) and is NOT installed here.
+
+paddlepaddle        # CPU build; use paddlepaddle-gpu on the GPU host
+paddlex
