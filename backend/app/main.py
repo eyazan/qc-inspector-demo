@@ -22,14 +22,6 @@ async def lifespan(app: FastAPI):
     settings.spec_source_dir.mkdir(parents=True, exist_ok=True)
     settings.spec_index_dir.mkdir(parents=True, exist_ok=True)
     settings.spec_output_dir.mkdir(parents=True, exist_ok=True)
-    # Initialize the relational store (runs / findings / overrides). Previously
-    # never called, so the override/report-pdf routes had no tables to use.
-    try:
-        from app.core.database import init_db
-
-        init_db()
-    except Exception:  # noqa: BLE001
-        logger.exception("init_db basarisiz — DB-tabanli ozellikler devre disi")
     logger.info("%s %s started", settings.app_name, settings.app_version)
     yield
 

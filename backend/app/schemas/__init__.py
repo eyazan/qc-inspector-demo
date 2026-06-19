@@ -116,3 +116,32 @@ class ErrorResponse(BaseModel):
     stage: str
     message: str
     details: dict = Field(default_factory=dict)
+
+
+class OverrideRequest(BaseModel):
+    action: str                          # approve | reject | edit
+    new_status: Optional[str] = None
+    new_value: Optional[str] = None
+    note: Optional[str] = None
+    inspector_id: Optional[str] = None
+
+
+class OverrideResponse(BaseModel):
+    status: str
+    finding_id: str
+    new_status: Optional[str] = None
+
+
+class ReviewRegion(BaseModel):
+    region_id: str
+    page_number: int
+    region_type: Optional[str] = None
+    text: str = ""
+    confidence: Optional[float] = None
+    needs_review: bool = True
+
+
+class ReviewRegionsResponse(BaseModel):
+    run_id: str
+    count: int
+    regions: list[ReviewRegion] = Field(default_factory=list)

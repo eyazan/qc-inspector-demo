@@ -287,3 +287,57 @@ class StorageService:
             except Exception:  # noqa: BLE001
                 continue
         return out
+
+    # ---- Structured findings: review regions + inspector overrides ----
+
+    def regions_for_review(self, run_id: str, min_confidence=None) -> list[dict]:
+        """Regions needing inspector review: empty text, or confidence below
+        the configured threshold (mirrors the needs_review flag concept)."""
+        regions = self.read_vendor_ocr_regions(run_id)
+        flagged = []
+        for r in regions:
+            text = (r.get("text") or "").strip()
+            conf = r.get("confidence")
+            needs = not text
+            if (
+                not needs
+                and min_confidence is not None
+                and conf is not None
+                and conf < min_confidence
+            ):
+                needs = True
+            if needs:
+                flagged.append({**r, "needs_review": True})
+        return flagged
+
+    @staticmethod
+    def run_id_from_finding(finding_id: str) -> Optional[str]:
+        if "::" in (finding_id or ""):
+            return finding_id.split("::", 1)[0]
+        return None
+
+    def apply_override(self, finding_id: str, override: dict) -> Optional[dict]:
+        """Apply an inspector override to a finding in final_report.json.
+
+        Returns the updated finding, or None if the run/finding is not found.
+        """
+        run_id = self.run_id_from_finding(finding_id)
+        if not run_id:
+            return None
+        report = self.read_final_report_json(run_id)
+        if report is None:
+            return None
+        target = None
+        for finding in report.get("findings", []):
+            if finding.get("finding_id") == finding_id:
+                target = finding
+                break
+        if target is None:
+            return None
+        target.setdefault("overrides", []).append(override)
+        if override.get("new_status"):
+            target["effective_result"] = override["new_status"]
+        if override.get("note"):
+            target["override_note"] = override["note"]
+        self.save_final_report_json(run_id, report)
+        return target

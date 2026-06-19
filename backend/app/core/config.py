@@ -118,6 +118,10 @@ class Settings(BaseSettings):
     dedup_iou_threshold: float = 0.5
     dedup_containment_threshold: float = 0.8
 
+    # Regions flagged for inspector review: empty text always; plus any region
+    # whose OCR confidence is below this threshold (None disables the threshold).
+    ocr_review_min_confidence: Optional[float] = None
+
     # --- Spec source root + indexing (2B). SPEC_NETWORK_ROOT points at a local
     # mock folder now; becomes a real UNC path later with no code change. ---
     spec_network_root: str = Field(

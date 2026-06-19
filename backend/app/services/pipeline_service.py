@@ -187,6 +187,11 @@ class PipelineService:
                 segment_findings, referenced_specs=preview.get("spec_referenced")
             )
             final_report["dedup_stats"] = preview.get("dedup_stats")
+            # Make finding ids globally unique (frontend override sends only the
+            # finding id, no run id): "<run_id>::F0001".
+            for f in final_report["findings"]:
+                f["finding_id"] = f"{run_id}::{f['finding_id']}"
+            final_report["run_id"] = run_id
 
             # Insan-okur Turkce anlati (ayni findings'ten render)
             run_meta = {
