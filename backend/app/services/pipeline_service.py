@@ -16,17 +16,18 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.providers.factory import get_layout_provider, get_ocr_provider
+from app.providers.factory import (
+    get_layout_provider,
+    get_ocr_provider,
+    get_spec_lookup_strategy,
+)
 from app.services.aggregation_service import AggregationService
 from app.services.comparison_service import ComparisonService
+from app.services.metadata_extraction_service import MetadataExtractionService
 from app.services.ocr import OcrPipeline
 from app.services.ocr.models import DocumentSegment
 from app.services.pipeline_state import get_run_state, drop_run_state
 from app.services.segmentation_service import SegmentationService
-from app.services.spec_finder import SpecFinder
-from app.services.spec_index_service import SpecIndexService
-from app.services.spec_sources import get_spec_source
-from app.services.metadata_extraction_service import MetadataExtractionService
 from app.services.storage_service import StorageService
 
 logger = get_logger(__name__)
@@ -101,60 +102,34 @@ class PipelineService:
             }
             self._storage.save_preview(run_id, preview)
 
-            # 3) SAP'tan spec metni
-            state.update("SAP'tan spec aliniyor", 70)
-            spec_source = get_spec_source()
-            sap_result = spec_source.fetch(
-                po_number=po_number, po_item=po_item, material=material
+            # 3+4) Spec cozumleme — Section 3 strateji zinciri
+            # (SAP -> yerel depo exact -> fuzzy -> tek-dosya indeksleme -> hata).
+            # SAP/spec hatasi pipeline'i COKERTMEZ; akis devam eder.
+            state.update("Spec cozumleniyor (SAP + yerel depo)", 75)
+            lookup = get_spec_lookup_strategy().resolve(
+                po_number=po_number,
+                po_item=po_item,
+                material=material,
+                extra_specs=meta.spec_references,
             )
-            spec_name = sap_result.spec_name or ""
-            if sap_result.status == "success":
-                preview = self._storage.update_preview(
-                    run_id,
-                    sap_spec_name=spec_name,
-                    sap_spec_text=sap_result.spec_text,
-                )
-                state.log(f"SAP spec alindi: {spec_name or '(ad yok)'}")
-            else:
-                state.log("SAP spec bulunamadi")
-
-            # 4) Spec PDF bul + indeksle (spec hatasi pipeline'i COKERTMEZ)
-            state.update("Spec dosyasi araniyor", 85)
-            spec_status = self._resolve_spec(run_id, spec_name, ocr_pipeline)
-            self._storage.update_preview(run_id, spec_doc_status=spec_status)
-            state.log(f"Spec dosya durumu: {spec_status}")
+            self._storage.update_preview(
+                run_id,
+                sap_spec_name=lookup.spec_no or "",
+                sap_spec_text=lookup.spec_text or "",
+                spec_doc_status=lookup.message,
+                spec_lookup_source=lookup.source,
+            )
+            if lookup.status == "found" and lookup.file_path:
+                src = Path(lookup.file_path)
+                if src.exists():
+                    self._storage.copy_spec_pdf_into_run(run_id, src)
+            state.log(f"Spec durumu: {lookup.status} ({lookup.source or lookup.stage or '-'})")
 
             # 5) DUR — karsilastirma bekleniyor
             state.pause_for_comparison(run_id, "Yukleme tamamlandi")
         except Exception as error:  # noqa: BLE001
             logger.exception("Upload pipeline failed (run=%s)", run_id)
             state.fail(f"Yukleme hatasi: {error}")
-
-    def _resolve_spec(self, run_id: str, spec_name: str, ocr_pipeline) -> str:
-        if not spec_name:
-            return "Spec adi yok (SAP'tan spec_no gelmedi)"
-        try:
-            indexer = SpecIndexService(ocr_pipeline=ocr_pipeline)
-            cached = indexer.get_cached(spec_name)
-            if cached:
-                src = Path(cached["file_path"])
-                if src.exists():
-                    self._storage.copy_spec_pdf_into_run(run_id, src)
-                return "Spec zaten indekslenmis (cache)"
-
-            finder = SpecFinder()
-            found = finder.find(spec_name)
-            if found is None:
-                return "Bu vendor dokumanina ait spec dosyasi bulunamamistir"
-
-            meta = indexer.get_or_process(spec_name, found)
-            if meta is None:
-                return f"Spec dosyasi bulundu ama islenemedi: {found.file_name}"
-            self._storage.copy_spec_pdf_into_run(run_id, Path(found.file_path))
-            return f"Spec network'ten alindi ve indekslendi: {found.file_name}"
-        except Exception as err:  # noqa: BLE001
-            logger.exception("Spec cozumleme hatasi (run=%s) — akis devam", run_id)
-            return f"Spec islenemedi: {err}"
 
     # ---------------- AŞAMA 2: KARŞILAŞTIRMA ----------------
     def start_comparison(self, run_id: str) -> tuple[bool, str]:
@@ -217,13 +192,8 @@ class PipelineService:
             state.fail(f"Karsilastirma hatasi: {error}")
 
     def _load_specification(self, preview: dict) -> str:
-        # 1) Indekslenmis spec md (varsa) 2) SAP metni
-        spec_name = preview.get("sap_spec_name") or ""
-        if spec_name:
-            indexer = SpecIndexService()
-            cached = indexer.get_cached(spec_name)
-            if cached and cached.get("text"):
-                return cached["text"]
+        # Asama 1'de spec lookup stratejisinin cozdugu spec metni preview'a
+        # sap_spec_text olarak yazildi (yerel depo veya SAP metni).
         return preview.get("sap_spec_text") or ""
 
     def _compare_segments(self, run_id, segments, specification, comparison, state) -> list[dict]:
