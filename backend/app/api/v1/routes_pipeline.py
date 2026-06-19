@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from app.api.deps import get_pipeline_service, get_storage_service
 from app.schemas import (
     CancelResponse,
+    PipelineStartRequest,
     PipelineStartResponse,
     ProcessingStatusResponse,
 )
@@ -16,9 +17,11 @@ router = APIRouter(prefix="/api", tags=["pipeline"])
 # ---- AŞAMA 1: yükleme pipeline'ı başlat ----
 @router.post("/start-full-pipeline", response_model=PipelineStartResponse)
 def start_full_pipeline(
+    request: PipelineStartRequest | None = None,
     pipeline: PipelineService = Depends(get_pipeline_service),
 ) -> PipelineStartResponse:
-    started, message, run_id = pipeline.start_upload()
+    seed = request.model_dump() if request else None
+    started, message, run_id = pipeline.start_upload(seed=seed)
     return PipelineStartResponse(
         status="started" if started else "rejected",
         run_id=run_id,

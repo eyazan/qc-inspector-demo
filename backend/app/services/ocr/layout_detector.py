@@ -133,6 +133,7 @@ class LayoutDetector:
                     bbox=item["bbox"],
                     page_number=page_number,
                     region_type=item.get("label", "paragraph"),
+                    score=item.get("score"),
                 )
             )
         logger.info("Sayfa %s: %s bolge tespit edildi (lokal)", page_number, len(regions))

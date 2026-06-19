@@ -8,6 +8,7 @@ class LayoutRegion:
     bbox: list[float]
     page_number: int
     region_type: str
+    score: Optional[float] = None
 
 
 @dataclass

@@ -26,6 +26,13 @@ class UploadResponse(BaseModel):
     saved_path: str
 
 
+class PipelineStartRequest(BaseModel):
+    po_number: str = ""
+    po_item: str = ""
+    material: str = ""
+    inspector_id: str = ""
+
+
 class PipelineStartResponse(BaseModel):
     status: str
     run_id: Optional[str] = None

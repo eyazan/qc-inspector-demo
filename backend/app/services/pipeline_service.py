@@ -26,8 +26,8 @@ from app.services.segmentation_service import SegmentationService
 from app.services.spec_finder import SpecFinder
 from app.services.spec_index_service import SpecIndexService
 from app.services.spec_sources import get_spec_source
+from app.services.metadata_extraction_service import MetadataExtractionService
 from app.services.storage_service import StorageService
-from app.services.vendor_po_parser import parse_vendor_ids
 
 logger = get_logger(__name__)
 
@@ -38,8 +38,13 @@ class PipelineService:
         self._lock = threading.Lock()
 
     # ---------------- AŞAMA 1: YÜKLEME ----------------
-    def start_upload(self) -> tuple[bool, str, str | None]:
-        """Input klasorundeki vendor PDF'lerini al, run olustur, Asama 1'i baslat."""
+    def start_upload(self, seed: dict | None = None) -> tuple[bool, str, str | None]:
+        """Input klasorundeki vendor PDF'lerini al, run olustur, Asama 1'i baslat.
+
+        seed: frontend'in start-full-pipeline govdesinden gelen opsiyonel
+        po_number/po_item/material/inspector_id. Dolu alanlar OCR'dan cikarilan
+        degerleri ezer; bos alanlar OCR/metadata cikarimina birakilir.
+        """
         with self._lock:
             specs, vendors = self._storage.list_input_pdfs()
             if not vendors:
@@ -49,12 +54,13 @@ class PipelineService:
             state = get_run_state(run_id)
             state.begin(run_id)
             thread = threading.Thread(
-                target=self._run_upload, args=(run_id, vendors), daemon=True
+                target=self._run_upload, args=(run_id, vendors, seed or {}), daemon=True
             )
             thread.start()
             return True, "Yukleme islemi baslatildi", run_id
 
-    def _run_upload(self, run_id: str, vendors: list[Path]) -> None:
+    def _run_upload(self, run_id: str, vendors: list[Path], seed: dict | None = None) -> None:
+        seed = seed or {}
         state = get_run_state(run_id)
         try:
             ocr_pipeline = OcrPipeline(get_layout_provider(), get_ocr_provider())
@@ -69,18 +75,26 @@ class PipelineService:
                 run_id, vendor.stem, [r.to_dict() for r in regions]
             )
 
-            # 2) Ilk sayfadan PO/kalem/malzeme
+            # 2) Ilk sayfadan PO/kalem/malzeme + TUM spec referanslari (LLM + regex)
             state.update("Tesellum fisi okunuyor (PO/kalem/malzeme)", 55)
             first_page_text = self._first_page_text(regions)
-            ids = parse_vendor_ids(first_page_text, vendor.name)
+            meta = MetadataExtractionService().extract(first_page_text, vendor.name)
+
+            # Frontend'ten gelen degerler (seed) doluysa OCR cikarimini ezer.
+            po_number = (seed.get("po_number") or "").strip() or (meta.po_number or "")
+            po_item = (seed.get("po_item") or "").strip() or (meta.po_item or "")
+            material = (seed.get("material") or "").strip() or (meta.material_number or "")
 
             preview = {
                 "run_id": run_id,
                 "vendor_filename": vendor.name,
                 "vendor_doc_id": vendor.name,
-                "po_number": ids.po_number or "",
-                "po_item": ids.po_item or "",
-                "material": ids.material or "",
+                "po_number": po_number,
+                "po_item": po_item,
+                "material": material,
+                "spec_references": meta.spec_references,
+                "inspector_id": (seed.get("inspector_id") or "").strip(),
+                "dedup_stats": ocr_pipeline.dedup_stats,
                 "sap_spec_name": "",
                 "sap_spec_text": "",
                 "spec_doc_status": "",
@@ -91,7 +105,7 @@ class PipelineService:
             state.update("SAP'tan spec aliniyor", 70)
             spec_source = get_spec_source()
             sap_result = spec_source.fetch(
-                po_number=ids.po_number, po_item=ids.po_item, material=ids.material
+                po_number=po_number, po_item=po_item, material=material
             )
             spec_name = sap_result.spec_name or ""
             if sap_result.status == "success":

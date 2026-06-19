@@ -28,6 +28,12 @@ def _collapse_digits(s: str) -> str:
     return re.sub(r"\D", "", s or "")
 
 
+def zero_pad_item(item: str | None, width: int = 5) -> str:
+    """Zero-pad a PO line item to `width` digits (SAP IItemno wants 5)."""
+    digits = _collapse_digits(item or "")
+    return digits.zfill(width) if digits else ""
+
+
 def _digits_after_label(text: str, label_pattern: str, max_window: int = 60) -> str:
     pat = re.compile(
         label_pattern + r"\s*:?\s*([0-9][0-9\s]{0," + str(max_window) + r"})",

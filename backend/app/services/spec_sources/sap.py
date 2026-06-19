@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.clients.http import build_client
 from app.services.spec_sources.base import SpecResult, SpecSource
+from app.services.vendor_po_parser import zero_pad_item
 
 logger = get_logger(__name__)
 
@@ -41,7 +42,7 @@ class SapSpecSource(SpecSource):
 
         # 1) PO + item
         if po_number and po_item:
-            r = self._query_po(po_number, po_item.zfill(5))
+            r = self._query_po(po_number, zero_pad_item(po_item))
             if r.status == "success":
                 return r
         # 2) Malzeme (IMatnr)
