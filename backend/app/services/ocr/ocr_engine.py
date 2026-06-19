@@ -7,6 +7,19 @@ from app.services.clients.http import build_client
 logger = get_logger(__name__)
 
 
+def _auth_headers() -> dict:
+    """Build OCR auth headers from config (discrepancy #1: scheme is config-driven)."""
+    scheme = (settings.ocr_auth_scheme or "bearer").lower()
+    if scheme == "basic" and settings.ocr_basic_user:
+        token = base64.b64encode(
+            f"{settings.ocr_basic_user}:{settings.ocr_basic_password}".encode("utf-8")
+        ).decode("ascii")
+        return {"Authorization": f"Basic {token}"}
+    if settings.ocr_bearer_key:
+        return {"Authorization": f"Bearer {settings.ocr_bearer_key}"}
+    return {}
+
+
 class OcrEngine:
     def __init__(self):
         self._endpoint = (
@@ -40,10 +53,7 @@ class OcrEngine:
             "temperature": 0.0
         }
         
-        # Bearer token authentication
-        headers = {}
-        if settings.ocr_bearer_key:
-            headers["Authorization"] = f"Bearer {settings.ocr_bearer_key}"
+        headers = _auth_headers()
 
         with build_client(self._timeout) as client:
             response = client.post(self._endpoint, json=payload, headers=headers)

@@ -3,7 +3,7 @@ import json
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.prompts import prompts
-from app.services.clients.llm_client import LlmClient
+from app.providers.factory import get_llm_provider
 from app.services.ocr.models import DocumentSegment, OcrRegion
 
 logger = get_logger(__name__)
@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 
 class SegmentationService:
     def __init__(self):
-        self._llm = LlmClient(settings.segmentation_timeout_seconds)
+        self._llm = get_llm_provider(settings.segmentation_timeout_seconds)
 
     def segment(self, regions: list[OcrRegion]) -> list[DocumentSegment]:
         region_dicts = [region.to_dict() for region in regions]

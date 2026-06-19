@@ -16,9 +16,10 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.providers.factory import get_layout_provider, get_ocr_provider
 from app.services.aggregation_service import AggregationService
 from app.services.comparison_service import ComparisonService
-from app.services.ocr import LayoutDetector, OcrEngine, OcrPipeline
+from app.services.ocr import OcrPipeline
 from app.services.ocr.models import DocumentSegment
 from app.services.pipeline_state import get_run_state, drop_run_state
 from app.services.segmentation_service import SegmentationService
@@ -56,7 +57,7 @@ class PipelineService:
     def _run_upload(self, run_id: str, vendors: list[Path]) -> None:
         state = get_run_state(run_id)
         try:
-            ocr_pipeline = OcrPipeline(LayoutDetector(), OcrEngine())
+            ocr_pipeline = OcrPipeline(get_layout_provider(), get_ocr_provider())
 
             # 1) Vendor PDF'i run'a kopyala + ilk sayfa(lar) OCR
             state.update("Vendor PDF OCR isleniyor (onizleme)", 30)
@@ -160,7 +161,7 @@ class PipelineService:
     def _run_comparison(self, run_id: str) -> None:
         state = get_run_state(run_id)
         try:
-            ocr_pipeline = OcrPipeline(LayoutDetector(), OcrEngine())
+            ocr_pipeline = OcrPipeline(get_layout_provider(), get_ocr_provider())
             segmentation = SegmentationService()
             comparison = ComparisonService()
             aggregation = AggregationService()

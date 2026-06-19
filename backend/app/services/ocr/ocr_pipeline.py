@@ -1,19 +1,24 @@
+from __future__ import annotations
+
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import fitz
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services.ocr.layout_detector import LayoutDetector
 from app.services.ocr.models import LayoutRegion, OcrRegion
-from app.services.ocr.ocr_engine import OcrEngine
+
+if TYPE_CHECKING:
+    from app.providers.layout.base import LayoutProvider
+    from app.providers.ocr.base import OcrProvider
 
 logger = get_logger(__name__)
 
 
 class OcrPipeline:
-    def __init__(self, layout_detector: LayoutDetector, ocr_engine: OcrEngine):
+    def __init__(self, layout_detector: "LayoutProvider", ocr_engine: "OcrProvider"):
         self._layout_detector = layout_detector
         self._ocr_engine = ocr_engine
         self._dpi = settings.pdf_render_dpi
