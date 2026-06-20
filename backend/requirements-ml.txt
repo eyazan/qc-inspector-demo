@@ -1,12 +1,23 @@
-# Heavy ML stack — install only on the machine that runs LOCAL layout detection
-# (PP-DocLayoutV3 via paddlex). On the MacBook this is CPU; on the GPU box it can
-# use CUDA by setting LAYOUT_DEVICE=cuda (no code change).
+# Heavy ML stack — install on machines that run models LOCALLY.
+# Requires Python 3.11/3.12 (paddle has no 3.14 wheels). Verified on macOS arm64.
 #
-# Versions are intentionally unpinned: paddle wheels are platform/Python
-# specific. Follow paddlex install docs for your platform, then:
-#     pip install -r requirements-ml.txt
-#
-# PaddleOCR-VL is REMOTE (OCR_SERVICE_URL) and is NOT installed here.
+#     python3.12 -m venv .venv && . .venv/bin/activate
+#     pip install -r requirements.txt -r requirements-ml.txt
+#     python scripts/download_models.py          # PP-DocLayoutV3 (layout)
+#     python scripts/download_models.py --ocr     # PaddleOCR-VL (local OCR, optional)
 
-paddlepaddle        # CPU build; use paddlepaddle-gpu on the GPU host
-paddlex
+# --- Local layout detection: PP-DocLayoutV3 via paddlex ---
+paddlepaddle==3.3.1            # CPU build; use paddlepaddle-gpu on the GPU host
+paddlex>=3.0.0
+opencv-contrib-python          # paddlex image/pdf reader backend
+pypdfium2                      # paddlex pdf reader backend
+
+# --- Local OCR: PaddleOCR-VL (OPTIONAL; production keeps OCR remote) ---
+# transformers is PINNED: PaddleOCR-VL's remote modeling code targets the 4.55
+# RoPE/masking API. Newer transformers (5.x) break it (KeyError 'default').
+torch>=2.2
+torchvision
+transformers==4.55.0
+accelerate
+einops
+sentencepiece

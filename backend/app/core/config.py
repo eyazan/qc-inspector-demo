@@ -152,6 +152,7 @@ class Settings(BaseSettings):
     ocr_local_device: str = "cpu"
     ocr_local_dtype: str = "float32"
     ocr_local_max_new_tokens: int = 2048
+    ocr_local_max_pixels: int = 1003520     # 1280*28*28 (model card OCR default)
 
     @field_validator("cors_origins", mode="before")
     @classmethod
