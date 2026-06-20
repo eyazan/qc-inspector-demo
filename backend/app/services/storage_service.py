@@ -6,6 +6,7 @@ from typing import Optional
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.utils.image_utils import image_bytes_to_pdf, is_image
 
 logger = get_logger(__name__)
 
@@ -30,6 +31,14 @@ class StorageService:
     def save_upload(self, filename: str, data: bytes, is_spec: bool) -> Path:
         target_dir = self._input_spec if is_spec else self._input_vendor
         target_dir.mkdir(parents=True, exist_ok=True)
+        # Vendor docs often arrive as photos (JPEG/HEIC-converted). Normalize a
+        # raster image to a single-page PDF so the pipeline stays format-agnostic.
+        if is_image(filename):
+            try:
+                data = image_bytes_to_pdf(data)
+                filename = f"{Path(filename).stem}.pdf"
+            except Exception:  # noqa: BLE001
+                logger.exception("Gorsel PDF'e cevrilemedi (%s); ham kaydediliyor", filename)
         target = target_dir / filename
         target.write_bytes(data)
         return target

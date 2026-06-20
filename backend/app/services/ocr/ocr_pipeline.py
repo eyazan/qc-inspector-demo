@@ -8,12 +8,12 @@ import fitz
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services.dedup_service import DedupService
 from app.services.ocr.models import LayoutRegion, OcrRegion
 
 if TYPE_CHECKING:
     from app.providers.layout.base import LayoutProvider
     from app.providers.ocr.base import OcrProvider
+    from app.services.dedup_service import DedupService
 
 logger = get_logger(__name__)
 
@@ -23,8 +23,11 @@ class OcrPipeline:
         self,
         layout_detector: "LayoutProvider",
         ocr_engine: "OcrProvider",
-        dedup: DedupService | None = None,
+        dedup: "DedupService | None" = None,
     ):
+        # Lazy import: dedup_service imports ocr.models, which loads this package.
+        from app.services.dedup_service import DedupService
+
         self._layout_detector = layout_detector
         self._ocr_engine = ocr_engine
         self._dedup = dedup or DedupService()
