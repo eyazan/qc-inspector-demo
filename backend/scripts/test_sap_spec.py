@@ -1,10 +1,10 @@
 """Smoke test for spec resolution: SAP source + the Section 3 lookup strategy.
 
 Exercises the lookup chain (SAP -> local store -> fuzzy -> single-file index ->
-clear error) against the local spec store. Run with RUN_MODE=mock to avoid live
-SAP. Ensure the spec store is populated first (scripts/index_specs.py --mode full).
+clear error) against the local spec store. With SPEC_SOURCE=local no live SAP is
+called. Ensure the spec store is populated first (scripts/index_specs.py --mode full).
 
-    RUN_MODE=mock python scripts/test_sap_spec.py
+    python scripts/test_sap_spec.py
 """
 
 import sys

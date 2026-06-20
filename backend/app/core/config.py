@@ -94,12 +94,10 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------------------
     # Provider selection (Section 6) — swap a model/provider via .env only.
-    # "mock" providers let the full pipeline be smoke-tested with no live
-    # GPU host / SAP / vLLM reachable.
     # ------------------------------------------------------------------
-    active_layout_provider: str = "paddlex_doclayout"   # paddlex_doclayout | mock
-    active_ocr_provider: str = "paddleocr_vl"           # paddleocr_vl | mock
-    active_llm_provider: str = "openai_compatible"      # openai_compatible | mock
+    active_layout_provider: str = "paddlex_doclayout"   # local on every machine
+    active_ocr_provider: str = "paddleocr_vl"           # paddleocr_vl (remote) | paddleocr_vl_local
+    active_llm_provider: str = "openai_compatible"      # any OpenAI-compatible endpoint
     active_spec_store: str = "sqlite"                    # sqlite | postgres
     active_spec_lookup_strategy: str = "sap_then_local_store"
 
@@ -144,18 +142,13 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///data/qc_inspector.db"
     db_echo: bool = False
 
-    # --- Run mode: "real" uses live providers, "mock" forces mock providers
-    # for offline smoke testing. Referenced by compliance/comparison layers. ---
-    run_mode: str = "real"                               # real | mock
-    # Backwards-compat alias for modules that still read settings.layout_mode.
-    layout_mode: str = Field(
-        default="real", validation_alias=AliasChoices("layout_mode", "run_mode")
-    )
-
-    # --- Local OCR (legacy in-process experiment; remote-only per topology).
-    # Present so config stays the single source of truth; not used by the
-    # remote OCR provider. ---
-    ocr_local_model_dir: str = ""
+    # --- Local OCR provider (PaddleOCR-VL in-process via transformers).
+    # OPTIONAL: production topology keeps OCR remote; this is for local testing
+    # on a machine with enough disk/RAM. Selected with
+    # ACTIVE_OCR_PROVIDER=paddleocr_vl_local. Weights pulled by
+    # scripts/download_models.py --ocr into ocr_local_model_dir. ---
+    ocr_local_model_hf_repo: str = "PaddlePaddle/PaddleOCR-VL-1.6"
+    ocr_local_model_dir: str = "models/PaddleOCR-VL-1.6"
     ocr_local_device: str = "cpu"
     ocr_local_dtype: str = "float32"
     ocr_local_max_new_tokens: int = 2048

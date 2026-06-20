@@ -1,8 +1,9 @@
-"""Provider factory — selects implementations from config only.
+"""Provider factory — selects implementations from config only (no mocks).
 
 Swapping a model/provider is an .env change (ACTIVE_*_PROVIDER), never a code
-edit. RUN_MODE=mock forces every provider to its mock so the full pipeline can
-be smoke-tested offline (no GPU host, no SAP, no vLLM).
+edit. This PC: layout=paddlex_doclayout (local), ocr=paddleocr_vl_local (local).
+Production PC: ocr=paddleocr_vl (remote). LLM is any OpenAI-compatible endpoint
+(Ollama here; vLLM/Qwen or Gemini elsewhere).
 """
 
 from app.core.config import settings
@@ -15,44 +16,46 @@ from app.providers.spec_store.base import SpecStore
 logger = get_logger(__name__)
 
 
-def _mock_forced() -> bool:
-    return (settings.run_mode or "real").lower() == "mock"
-
-
 def get_layout_provider() -> LayoutProvider:
-    provider = "mock" if _mock_forced() else settings.active_layout_provider
-    if provider == "mock":
-        from app.providers.layout.mock_provider import MockLayoutProvider
-
-        return MockLayoutProvider()
     from app.providers.layout.paddlex_doclayout_provider import (
         PaddlexDocLayoutProvider,
     )
 
+    if settings.active_layout_provider != "paddlex_doclayout":
+        logger.warning(
+            "Bilinmeyen layout provider '%s'; paddlex_doclayout kullaniliyor",
+            settings.active_layout_provider,
+        )
     return PaddlexDocLayoutProvider()
 
 
 def get_ocr_provider() -> OcrProvider:
-    provider = "mock" if _mock_forced() else settings.active_ocr_provider
-    if provider == "mock":
-        from app.providers.ocr.mock_provider import MockOcrProvider
+    provider = settings.active_ocr_provider
+    if provider == "paddleocr_vl_local":
+        from app.providers.ocr.paddleocr_vl_local_provider import (
+            PaddleOcrVlLocalProvider,
+        )
 
-        return MockOcrProvider()
+        return PaddleOcrVlLocalProvider()
     from app.providers.ocr.paddleocr_vl_provider import PaddleOcrVlProvider
 
+    if provider != "paddleocr_vl":
+        logger.warning(
+            "Bilinmeyen OCR provider '%s'; paddleocr_vl (uzak) kullaniliyor", provider
+        )
     return PaddleOcrVlProvider()
 
 
 def get_llm_provider(timeout_seconds: int) -> LlmProvider:
-    provider = "mock" if _mock_forced() else settings.active_llm_provider
-    if provider == "mock":
-        from app.providers.llm.mock_provider import MockLlmProvider
-
-        return MockLlmProvider()
     from app.providers.llm.openai_compatible_provider import (
         OpenAiCompatibleLlmProvider,
     )
 
+    if settings.active_llm_provider != "openai_compatible":
+        logger.warning(
+            "Bilinmeyen LLM provider '%s'; openai_compatible kullaniliyor",
+            settings.active_llm_provider,
+        )
     return OpenAiCompatibleLlmProvider(timeout_seconds)
 
 

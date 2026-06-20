@@ -2,10 +2,10 @@
 
 Builds a vendor PDF from the sample images (data/samples/*.jpg) if present, runs
 Stage 1 (upload -> preview -> pause) then Stage 2 (comparison -> aggregation),
-and prints the structured final_report plus which providers were real vs mock.
+and prints the structured final_report. Uses the providers configured in .env
+(this PC: DocLayout local + PaddleOCR-VL local + Ollama LLM).
 
-    RUN_MODE=mock python scripts/test_full_pipeline.py     # fully offline
-    python scripts/test_full_pipeline.py                    # uses configured providers
+    python scripts/test_full_pipeline.py
 """
 
 import sys
@@ -61,8 +61,7 @@ def main() -> int:
 
     print(
         f"Providers -> layout={get_layout_provider().name} "
-        f"ocr={get_ocr_provider().name} llm={get_llm_provider(60).name} "
-        f"(run_mode={settings.run_mode})"
+        f"ocr={get_ocr_provider().name} llm={get_llm_provider(60).name}"
     )
 
     pipeline = PipelineService(storage)

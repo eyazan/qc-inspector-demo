@@ -1,4 +1,2 @@
-import os
-
-# Force mock providers for the whole unit suite (no GPU/SAP/LLM/OCR needed).
-os.environ.setdefault("RUN_MODE", "mock")
+# Unit tests here cover pure logic (IoU, JSON repair, PO zero-pad, hashing,
+# SAP parsing with a patched client) and need no live providers/models.

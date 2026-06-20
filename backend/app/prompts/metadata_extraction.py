@@ -4,9 +4,6 @@ Extracts PO number, PO item, material number and ALL declared spec references
 from the first-page (receiving report / tesellum fisi) OCR text. A single vendor
 document can declare conformance to a FAMILY of equivalent specs, so every
 declared spec must be captured, not just the first match.
-
-System prompt contains the anchors "METADATA" + "JSON" so the mock LLM provider
-can recognise the call type offline.
 """
 
 import json

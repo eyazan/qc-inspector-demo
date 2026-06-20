@@ -10,7 +10,6 @@ from app.services.clients.llm_client import LlmClient
 
 class OpenAiCompatibleLlmProvider(LlmProvider):
     name = "openai_compatible"
-    is_mock = False
 
     def __init__(self, timeout_seconds: int):
         self._client = LlmClient(timeout_seconds)
