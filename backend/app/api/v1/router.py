@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     routes_health,
+    routes_jobs,
     routes_override,
     routes_pipeline,
     routes_report,
@@ -20,3 +21,4 @@ api_router.include_router(routes_results.router)
 api_router.include_router(routes_report.router)
 api_router.include_router(routes_override.router)
 api_router.include_router(routes_spec_index.router)
+api_router.include_router(routes_jobs.router)

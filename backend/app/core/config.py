@@ -101,6 +101,20 @@ class Settings(BaseSettings):
     comparison_timeout_seconds: int = 600
     aggregation_timeout_seconds: int = 300
 
+    # --- Job queue (async work: vendor pipeline, spec indexing) ---
+    active_job_queue: str = "inprocess"          # inprocess | celery
+    job_workers: int = 2
+    job_max_attempts: int = 3
+
+    # --- Object storage (artifacts: PDFs, crops, JSON/MD) ---
+    active_object_store: str = "local"           # local | s3
+    s3_bucket: str = ""
+    s3_endpoint_url: str = ""                    # MinIO/S3-compatible
+
+    # --- SAP provider selection (real | mock). If unset, derived from spec_source
+    # (sap->real, local->mock) by the SAP factory. ---
+    active_sap_provider: str = ""
+
     # --- Resilience (production HTTP clients) ---
     retry_count: int = 3
     retry_backoff_seconds: float = 0.5
