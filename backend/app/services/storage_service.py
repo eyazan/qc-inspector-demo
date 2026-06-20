@@ -14,6 +14,7 @@ METADATA_FILENAME = "metadata.json"
 FINAL_REPORT_FILENAME = "final_report.md"
 FINAL_REPORT_JSON_FILENAME = "final_report.json"
 SEGMENT_MARKER = "__seg__"
+OCR_SCHEMA_VERSION = "1.0"
 
 
 class StorageService:
@@ -348,6 +349,47 @@ class StorageService:
 
     def save_vendor_ocr_regions(self, run_id: str, name: str, regions: list[dict]) -> None:
         self.save_ocr(run_id, name, regions, is_spec=False)
+
+    def save_ocr_pages(self, run_id: str, regions: list[dict]) -> dict:
+        """Persist page-level + document-level OCR JSON (versioned schema).
+
+        Every page that produced regions gets vendor/pages/page_{n}.json; a
+        document-level vendor/document.json summarizes all pages. Returns the
+        document summary.
+        """
+        pages_dir = self.run_path(run_id) / "vendor" / "pages"
+        pages_dir.mkdir(parents=True, exist_ok=True)
+        by_page: dict[int, list[dict]] = {}
+        for r in regions:
+            by_page.setdefault(r.get("page_number", 0), []).append(r)
+
+        page_summaries = []
+        for page_number in sorted(by_page):
+            page_doc = {
+                "schema_version": OCR_SCHEMA_VERSION,
+                "run_id": run_id,
+                "page_number": page_number,
+                "region_count": len(by_page[page_number]),
+                "regions": by_page[page_number],
+            }
+            (pages_dir / f"page_{page_number}.json").write_text(
+                json.dumps(page_doc, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            page_summaries.append(
+                {"page_number": page_number, "region_count": len(by_page[page_number])}
+            )
+
+        document = {
+            "schema_version": OCR_SCHEMA_VERSION,
+            "run_id": run_id,
+            "page_count": len(by_page),
+            "total_regions": len(regions),
+            "pages": page_summaries,
+        }
+        (self.run_path(run_id) / "vendor" / "document.json").write_text(
+            json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return document
 
     def read_vendor_ocr_regions(self, run_id: str) -> list[dict]:
         """Asama 1'de kaydedilen vendor OCR JSON'larini geri oku (Asama 2 icin)."""

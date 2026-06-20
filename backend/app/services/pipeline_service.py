@@ -73,9 +73,9 @@ class PipelineService:
             self._storage.copy_pdf_into_run(run_id, vendor, is_spec=False)
             max_pages = settings.upload_ocr_max_pages or None
             regions = ocr_pipeline.run(vendor, max_pages=max_pages)
-            self._storage.save_vendor_ocr_regions(
-                run_id, vendor.stem, [r.to_dict() for r in regions]
-            )
+            region_dicts = [r.to_dict() for r in regions]
+            self._storage.save_vendor_ocr_regions(run_id, vendor.stem, region_dicts)
+            self._storage.save_ocr_pages(run_id, region_dicts)
 
             # 2) Ilk sayfadan PO/kalem/malzeme + TUM spec referanslari (LLM + regex)
             state.update("Tesellum fisi okunuyor (PO/kalem/malzeme)", 55)
@@ -175,9 +175,9 @@ class PipelineService:
             state.update("Vendor tum sayfalar OCR isleniyor", 30)
             vendor_pdf = self._storage.vendor_pdf_file(run_id)
             regions = ocr_pipeline.run(vendor_pdf)  # tum sayfalar
-            self._storage.save_vendor_ocr_regions(
-                run_id, vendor_pdf.stem, [r.to_dict() for r in regions]
-            )
+            region_dicts = [r.to_dict() for r in regions]
+            self._storage.save_vendor_ocr_regions(run_id, vendor_pdf.stem, region_dicts)
+            self._storage.save_ocr_pages(run_id, region_dicts)
 
             # Segmentasyon
             state.update("Belgeler segmentlere ayriliyor", 60)
