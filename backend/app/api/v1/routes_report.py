@@ -5,7 +5,7 @@ from fastapi.responses import Response
 
 from app.api.deps import get_storage_service
 from app.core.config import settings
-from app.schemas import ReviewRegion, ReviewRegionsResponse
+from app.schemas import ReviewRegion
 from app.services.report_service import build_compliance_pdf
 from app.services.storage_service import StorageService
 
@@ -57,12 +57,13 @@ def export_pdf(run_id: str, storage: StorageService = Depends(get_storage_servic
     )
 
 
-@router.get("/report/{run_id}/review-regions", response_model=ReviewRegionsResponse)
+# Returns a bare ARRAY — the InspectorReport screen reads `regions.length`.
+@router.get("/report/{run_id}/review-regions", response_model=list[ReviewRegion])
 def review_regions(
     run_id: str, storage: StorageService = Depends(get_storage_service)
-) -> ReviewRegionsResponse:
-    regions = storage.regions_for_review(run_id, settings.ocr_review_min_confidence)
-    items = [
+) -> list[ReviewRegion]:
+    regions = storage.regions_for_review_list(run_id, settings.ocr_review_min_confidence)
+    return [
         ReviewRegion(
             region_id=r.get("region_id", ""),
             page_number=r.get("page_number", 0),
@@ -72,4 +73,3 @@ def review_regions(
         )
         for r in regions
     ]
-    return ReviewRegionsResponse(run_id=run_id, count=len(items), regions=items)

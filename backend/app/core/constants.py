@@ -35,6 +35,28 @@ RESULT_PRIORITY = {
     RESULT_NOT_COVERED: 1,
 }
 
+# Frontend (InspectorReport / report_service) status vocabulary. The UI knows
+# COMPLIANT | NON_COMPLIANT | PARTIAL | MISSING | NOT_COVERED. Map the internal
+# result enum onto it (UNCLEAR -> PARTIAL, NOT_COVERED_IN_THIS_DOCUMENT -> NOT_COVERED).
+RESULT_TO_FRONTEND = {
+    RESULT_COMPLIANT: "COMPLIANT",
+    RESULT_NON_COMPLIANT: "NON_COMPLIANT",
+    RESULT_NOT_COVERED: "NOT_COVERED",
+    RESULT_MISSING: "MISSING",
+    RESULT_UNCLEAR: "PARTIAL",
+}
+
+
+def to_frontend_status(result: str) -> str:
+    """Map internal/override result onto the frontend status vocabulary."""
+    if not result:
+        return "PARTIAL"
+    r = str(result).strip().upper()
+    if r in RESULT_TO_FRONTEND.values():
+        return r  # already frontend vocab (e.g. an override new_status)
+    return RESULT_TO_FRONTEND.get(normalize_result(r), "PARTIAL")
+
+
 # Error pipeline stages (Section 5).
 STAGES = [
     "file_upload",

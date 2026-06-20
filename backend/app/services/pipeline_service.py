@@ -113,11 +113,19 @@ class PipelineService:
                 material=material,
                 extra_specs=meta.spec_references,
             )
+            # spec_doc_status wording must match the preview screen's substring
+            # checks: 'indeks'/'network' -> show spec PDF; 'bulunamam' -> missing.
+            if lookup.status == "found" and lookup.file_path:
+                spec_doc_status = f"Spec indekslendi ve hazir (kaynak: {lookup.source})"
+            elif lookup.status == "found":
+                spec_doc_status = "SAP spec metni hazir (spec dosyasi indekslenmedi)"
+            else:
+                spec_doc_status = "Bu vendor dokumanina ait spec dosyasi bulunamamistir"
             self._storage.update_preview(
                 run_id,
                 sap_spec_name=lookup.spec_no or "",
                 sap_spec_text=lookup.spec_text or "",
-                spec_doc_status=lookup.message,
+                spec_doc_status=spec_doc_status,
                 spec_lookup_source=lookup.source,
                 spec_referenced=lookup.references,
             )

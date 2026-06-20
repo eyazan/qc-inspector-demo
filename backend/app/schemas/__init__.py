@@ -75,6 +75,35 @@ class ReportResponse(BaseModel):
     filename: Optional[str] = None
 
 
+class FindingItem(BaseModel):
+    id: str
+    parameter: str
+    spec_section: Optional[str] = None
+    spec_value: Optional[str] = None
+    vendor_value: Optional[str] = None
+    status: str
+    severity: str = "MEDIUM"
+    source: str = "llm"
+    rationale: Optional[str] = None
+    deviation_pct: Optional[float] = None
+    page_ref: Optional[int] = None
+    has_override: bool = False
+    override_note: Optional[str] = None
+
+
+class InspectorReportResponse(BaseModel):
+    id: str
+    type: str = "final_aggregation"
+    po_number: Optional[str] = None
+    po_item: Optional[str] = None
+    material: Optional[str] = None
+    summary: dict = Field(default_factory=dict)
+    findings: list[FindingItem] = Field(default_factory=list)
+    referenced_spec_warnings: list[dict] = Field(default_factory=list)
+    content: Optional[str] = None
+    filename: Optional[str] = None
+
+
 class RenameRequest(BaseModel):
     new_name: str
 

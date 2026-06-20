@@ -5,8 +5,8 @@ from app.schemas import (
     ComparisonResultItem,
     GenericMessageResponse,
     GroupedSegmentsResponse,
+    InspectorReportResponse,
     RenameRequest,
-    ReportResponse,
 )
 from app.services.storage_service import StorageService
 
@@ -57,26 +57,26 @@ def all_reports(
     return [ComparisonResultItem(**item) for item in storage.list_comparison_results()]
 
 
-@router.get("/report/{report_id}", response_model=ReportResponse)
+@router.get("/report/{report_id}", response_model=InspectorReportResponse)
 def get_report(
     report_id: str,
     storage: StorageService = Depends(get_storage_service),
-) -> ReportResponse:
-    report = storage.read_report(report_id)
+) -> InspectorReportResponse:
+    report = storage.build_inspector_report(report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="Rapor bulunamadi")
-    return ReportResponse(**report)
+    return InspectorReportResponse(**report)
 
 
-@router.get("/report/{report_id}/enriched", response_model=ReportResponse)
+@router.get("/report/{report_id}/enriched", response_model=InspectorReportResponse)
 def get_enriched_report(
     report_id: str,
     storage: StorageService = Depends(get_storage_service),
-) -> ReportResponse:
-    report = storage.read_report(report_id)
+) -> InspectorReportResponse:
+    report = storage.build_inspector_report(report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="Rapor bulunamadi")
-    return ReportResponse(**report)
+    return InspectorReportResponse(**report)
 
 
 @router.get("/report/{report_id}/segments", response_model=GroupedSegmentsResponse)

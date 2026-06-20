@@ -107,6 +107,71 @@ class StorageService:
         )
         return filename
 
+    def build_inspector_report(self, run_id: str) -> Optional[dict]:
+        """Frontend-shaped report (InspectorReport screen): findings + summary +
+        PO metadata, with the result enum mapped to the UI status vocabulary."""
+        from app.core.constants import to_frontend_status
+
+        report = self.read_final_report_json(run_id)
+        if report is None:
+            return None
+        preview = self.read_preview(run_id) or {}
+
+        findings = []
+        summary: dict[str, int] = {}
+        for f in report.get("findings", []):
+            status = to_frontend_status(f.get("effective_result") or f.get("result"))
+            summary[status] = summary.get(status, 0) + 1
+            findings.append(
+                {
+                    "id": f.get("finding_id"),
+                    "parameter": f.get("parameter"),
+                    "spec_section": f.get("spec_section"),
+                    "spec_value": f.get("spec_evidence"),
+                    "vendor_value": f.get("vendor_evidence"),
+                    "status": status,
+                    "severity": (f.get("severity") or "MEDIUM"),
+                    "source": "llm",
+                    "rationale": f.get("rationale"),
+                    "deviation_pct": f.get("deviation_pct"),
+                    "page_ref": f.get("vendor_page"),
+                    "has_override": bool(f.get("overrides")),
+                    "override_note": f.get("override_note"),
+                }
+            )
+
+        narrative_path = self.run_path(run_id) / "reports" / FINAL_REPORT_FILENAME
+        content = narrative_path.read_text(encoding="utf-8") if narrative_path.exists() else None
+
+        return {
+            "id": run_id,
+            "type": "final_aggregation",
+            "po_number": preview.get("po_number"),
+            "po_item": preview.get("po_item"),
+            "material": preview.get("material"),
+            "summary": summary,
+            "findings": findings,
+            "referenced_spec_warnings": report.get("referenced_spec_warnings", []),
+            "content": content,
+            "filename": FINAL_REPORT_FILENAME,
+        }
+
+    def regions_for_review_list(self, run_id: str, min_confidence=None) -> list[dict]:
+        """review-regions as a bare list (the InspectorReport screen reads .length)."""
+        regions = self.regions_for_review(run_id, min_confidence)
+        return [
+            {
+                "id": r.get("region_id"),
+                "region_id": r.get("region_id"),
+                "page_number": r.get("page_number"),
+                "region_type": r.get("region_type"),
+                "text": r.get("text", "") or "",
+                "confidence": r.get("confidence"),
+                "needs_review": True,
+            }
+            for r in regions
+        ]
+
     def write_metadata(self, run_id: str, metadata: dict) -> None:
         target = self.run_path(run_id) / METADATA_FILENAME
         target.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
