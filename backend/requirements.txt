@@ -21,6 +21,14 @@ rapidfuzz==3.14.5
 # Model acquisition (scripts/download_models.py)
 huggingface_hub==1.20.1
 
+# Config overlay (config.yaml)
+pyyaml
+
+# Optional (enable as needed):
+#   apscheduler      # SPEC_INDEX_SCHEDULE in-process scheduler
+#   boto3            # ACTIVE_OBJECT_STORE=s3 (S3/MinIO)
+#   celery[redis]    # ACTIVE_JOB_QUEUE=celery
+
 # ---------------------------------------------------------------------------
 # Layout detection (PP-DocLayoutV3) — LOCAL provider, see requirements-ml.txt.
 # Kept out of the core set so the API + mock providers install cleanly without
