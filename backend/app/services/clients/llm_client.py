@@ -1,6 +1,13 @@
+"""Remote LLM client (OpenAI-compatible chat/completions).
+
+Works with any OpenAI-compatible endpoint (vLLM/Qwen, Together, Fireworks,
+OpenRouter, Gemini-OpenAI). Hardening (retries/backoff/circuit-breaker/timeout/
+token-safe logging) lives in clients/http.post_json.
+"""
+
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services.clients.http import build_client
+from app.services.clients.http import post_json
 
 logger = get_logger(__name__)
 
@@ -23,11 +30,11 @@ class LlmClient:
                 {"role": "user", "content": content},
             ],
         }
-        headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+        headers = {}
+        if settings.llm_api_key and settings.llm_api_key != "not-needed":
+            headers["Authorization"] = f"Bearer {settings.llm_api_key}"
 
-        with build_client(self._timeout_seconds) as client:
-            response = client.post(self._endpoint, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-
+        data = post_json(
+            self._endpoint, payload, headers=headers, timeout_seconds=self._timeout_seconds
+        )
         return data["choices"][0]["message"]["content"]

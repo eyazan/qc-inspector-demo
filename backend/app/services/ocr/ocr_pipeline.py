@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -93,21 +92,20 @@ class OcrPipeline:
     def _recognize_regions(
         self, page, layout_regions: list[LayoutRegion]
     ) -> list[OcrRegion]:
-        crops = [(region, self._crop_region(page, region.bbox)) for region in layout_regions]
-
-        def recognize(item):
-            region, crop = item
-            text, confidence = self._ocr_engine.recognize(crop)
-            return OcrRegion(
-                region_id=region.region_id,
-                text=text,
-                bbox=region.bbox,
-                page_number=region.page_number,
-                region_type=region.region_type,
-                confidence=confidence,
+        crops = [self._crop_region(page, region.bbox) for region in layout_regions]
+        # Batch the whole page's regions through the provider (remote providers
+        # run these concurrently / batched; local ones fall back to sequential).
+        results = self._ocr_engine.recognize_batch(crops)
+        out: list[OcrRegion] = []
+        for region, (text, confidence) in zip(layout_regions, results):
+            out.append(
+                OcrRegion(
+                    region_id=region.region_id,
+                    text=text,
+                    bbox=region.bbox,
+                    page_number=region.page_number,
+                    region_type=region.region_type,
+                    confidence=confidence,
+                )
             )
-
-        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
-            results = list(executor.map(recognize, crops))
-
-        return results
+        return out

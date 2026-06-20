@@ -17,3 +17,6 @@ class PaddleOcrVlProvider(OcrProvider):
 
     def recognize(self, region_image_png: bytes) -> tuple[str, float | None]:
         return self._engine.recognize(region_image_png)
+
+    def recognize_batch(self, images: list[bytes]) -> list[tuple[str, float | None]]:
+        return self._engine.recognize_batch(images)

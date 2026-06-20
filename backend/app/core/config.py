@@ -1,18 +1,47 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Optional
 
 from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    NoDecode,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 
 
 class Settings(BaseSettings):
+    # Precedence: env > .env > config.yaml > defaults. The YAML file path is
+    # QC_CONFIG_YAML or ./config.yaml; it holds non-secret structured overrides.
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        yaml_file=os.getenv("QC_CONFIG_YAML", "config.yaml"),
+        yaml_file_encoding="utf-8",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # First source wins: env, then .env, then config.yaml, then defaults.
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            YamlConfigSettingsSource(settings_cls),
+            file_secret_settings,
+        )
 
     app_name: str = "QC Inspector OCR Service"
     app_version: str = "1.0.0"
@@ -24,7 +53,9 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
-    data_root: Path = Path("data")
+    data_root: Path = Field(
+        default=Path("data"), validation_alias=AliasChoices("data_root", "storage_path")
+    )
     static_mount_path: str = "/files"
 
     layout_service_url: str = "http://localhost:8101"
@@ -35,22 +66,50 @@ class Settings(BaseSettings):
     layout_model_dir: str = "models/PP-DocLayoutV3_safetensors"
     layout_score_threshold: float = 0.10  # dusuk esik -> daha cok bolge
 
+    # --- OCR (remote service, OpenAI-compatible). New names + legacy aliases. ---
     ocr_service_url: str = "http://localhost:8102"
-    ocr_recognize_path: str = "/ocr/recognize"
-    ocr_timeout_seconds: int = 1800
-    ocr_max_concurrency: int = 4
-    ocr_bearer_key: str = ""
+    ocr_recognize_path: str = "/v1/chat/completions"
+    ocr_timeout_seconds: int = Field(
+        default=1800, validation_alias=AliasChoices("ocr_timeout_seconds", "ocr_timeout")
+    )
+    ocr_max_concurrency: int = Field(
+        default=4, validation_alias=AliasChoices("ocr_max_concurrency", "max_concurrency")
+    )
+    ocr_batch_size: int = 4
+    ocr_bearer_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("ocr_bearer_key", "ocr_service_bearer_token"),
+    )
     ocr_model_name: str = "paddleocr-vl-16"
 
-    llm_base_url: str = "http://localhost:8000/v1"
-    llm_model: str = "qwen3"
-    llm_api_key: str = "not-needed"
+    # --- LLM (remote service, OpenAI-compatible). New names + legacy aliases. ---
+    llm_base_url: str = Field(
+        default="http://localhost:8000/v1",
+        validation_alias=AliasChoices("llm_base_url", "llm_service_url"),
+    )
+    llm_model: str = Field(
+        default="qwen3", validation_alias=AliasChoices("llm_model", "llm_model_name")
+    )
+    llm_api_key: str = Field(
+        default="not-needed",
+        validation_alias=AliasChoices("llm_api_key", "llm_service_bearer_token"),
+    )
     llm_temperature: float = 0.0
     llm_max_tokens: int = 8192
     llm_no_think_suffix: str = ""
     segmentation_timeout_seconds: int = 600
     comparison_timeout_seconds: int = 600
     aggregation_timeout_seconds: int = 300
+
+    # --- Resilience (production HTTP clients) ---
+    retry_count: int = 3
+    retry_backoff_seconds: float = 0.5
+    request_timeout_seconds: int = Field(
+        default=120, validation_alias=AliasChoices("request_timeout_seconds", "request_timeout")
+    )
+    circuit_breaker_fail_max: int = 5
+    circuit_breaker_reset_seconds: int = 30
+    spec_lookup_url: str = ""
 
     pdf_render_dpi: int = 150
     borderline_threshold_ratio: float = 0.10
@@ -125,7 +184,7 @@ class Settings(BaseSettings):
     spec_network_root: str = Field(
         default="data/spec_store/mock_specs",
         validation_alias=AliasChoices(
-            "spec_network_root", "spec_docs_unc_path", "spec_docs_folder"
+            "spec_network_root", "network_share_path", "spec_docs_unc_path", "spec_docs_folder"
         ),
     )
     spec_store_backend: str = "sqlite"
