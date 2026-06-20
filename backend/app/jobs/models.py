@@ -7,6 +7,7 @@ dead-letter record. The store is an interface so a DB-backed impl can drop in.
 """
 
 import json
+import os
 import threading
 import uuid
 from abc import ABC, abstractmethod
@@ -89,10 +90,15 @@ class FileJobStore(JobStore):
 
     def save(self, job: Job) -> None:
         job.updated_at = _now()
+        target = self._path(job.id)
+        tmp = target.with_suffix(".json.tmp")
         with self._lock:
-            self._path(job.id).write_text(
+            # Atomic write: a concurrent reader sees either the old or the new
+            # complete file, never a half-written one.
+            tmp.write_text(
                 json.dumps(job.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
             )
+            os.replace(tmp, target)
 
     def list(self) -> list[Job]:
         out = []
