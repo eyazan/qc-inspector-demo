@@ -171,23 +171,36 @@ class PipelineService:
             if not specification.strip():
                 state.log("UYARI: Spec metni yok, karsilastirma sinirli")
 
-            # Vendor: TUM sayfalar (Asama 1 sadece ilk sayfayi OCR'lamis olabilir)
+            # Vendor: TUM sayfalar OCR + sayfa-basina JSON artefaktlari (timing'li)
             state.update("Vendor tum sayfalar OCR isleniyor", 30)
+            import time as _t
+            timings: dict = {}
             vendor_pdf = self._storage.vendor_pdf_file(run_id)
-            regions = ocr_pipeline.run(vendor_pdf)  # tum sayfalar
+            pages_dir = self._storage.run_path(run_id) / "vendor" / "pages"
+            _ts = _t.monotonic()
+            regions, ocr_timings = ocr_pipeline.run_with_artifacts(vendor_pdf, pages_dir)
+            timings["ocr_stage"] = ocr_timings
             region_dicts = [r.to_dict() for r in regions]
             self._storage.save_vendor_ocr_regions(run_id, vendor_pdf.stem, region_dicts)
             self._storage.save_ocr_pages(run_id, region_dicts)
+            state.log(
+                f"OCR: {ocr_timings.get('pages') and len(ocr_timings['pages'])} sayfa, "
+                f"{len(regions)} bolge ({_t.monotonic()-_ts:.0f}s)"
+            )
 
             # Segmentasyon
             state.update("Belgeler segmentlere ayriliyor", 60)
+            _ts = _t.monotonic()
             segments = segmentation.segment(regions)
+            timings["segmentation_s"] = round(_t.monotonic() - _ts, 2)
             state.log(f"{len(segments)} segment tespit edildi")
 
             # Segment bazli yapisal karsilastirma (JSON findings)
+            _ts = _t.monotonic()
             segment_findings = self._compare_segments(
                 run_id, segments, specification, comparison, state
             )
+            timings["comparison_s"] = round(_t.monotonic() - _ts, 2)
 
             # Deterministik capraz-belge uzlastirma -> yapisal final_report
             state.update("Nihai rapor olusturuluyor", 95)
@@ -212,6 +225,21 @@ class PipelineService:
 
             self._storage.save_final_report_json(run_id, final_report)
             self._storage.save_final_report(run_id, final_report_text)
+            # Job-root artifacts (prompt Section 3): comparison_result.json +
+            # job_metadata.json (per-stage timings, page count, traceability).
+            self._storage.save_job_artifact(run_id, "comparison_result.json", final_report)
+            self._storage.save_job_artifact(run_id, "job_metadata.json", {
+                "run_id": run_id,
+                "po_number": preview.get("po_number"),
+                "po_item": preview.get("po_item"),
+                "material": preview.get("material"),
+                "spec_no": preview.get("sap_spec_name"),
+                "spec_lookup_source": preview.get("spec_lookup_source"),
+                "page_count": len((timings.get("ocr_stage") or {}).get("pages", [])),
+                "region_count": len(region_dicts),
+                "dedup_stats": preview.get("dedup_stats"),
+                "timings": timings,
+            })
 
             self._write_metadata(run_id, preview, segments)
             self._storage.clear_inputs()

@@ -350,6 +350,12 @@ class StorageService:
     def save_vendor_ocr_regions(self, run_id: str, name: str, regions: list[dict]) -> None:
         self.save_ocr(run_id, name, regions, is_spec=False)
 
+    def save_job_artifact(self, run_id: str, filename: str, obj: dict) -> str:
+        """Write a job-root JSON artifact (comparison_result.json, job_metadata.json)."""
+        target = self.run_path(run_id) / filename
+        target.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+        return filename
+
     def save_ocr_pages(self, run_id: str, regions: list[dict]) -> dict:
         """Persist page-level + document-level OCR JSON (versioned schema).
 
