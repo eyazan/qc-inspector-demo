@@ -153,4 +153,71 @@ export const healthCheck = async () => {
   }
 }
 
+// ----- Sistem sağlığı / config -----
+export const getSystemConfig = async () => {
+  try {
+    const response = await api.get('/api/system/config')
+    return response.data
+  } catch (error) {
+    throw error.response?.data || error.message
+  }
+}
+
+export const getReadiness = async () => {
+  try {
+    const response = await api.get('/health/ready')
+    return response.data
+  } catch (error) {
+    throw error.response?.data || error.message
+  }
+}
+
+export const getMetrics = async () => {
+  try {
+    const response = await api.get('/metrics')
+    return response.data
+  } catch (error) {
+    throw error.response?.data || error.message
+  }
+}
+
+// ----- Spec indeksleme -----
+export const listIndexedSpecs = async () => {
+  try {
+    const response = await api.get('/api/specs')
+    return response.data
+  } catch (error) {
+    throw error.response?.data || error.message
+  }
+}
+
+export const searchIndexedSpecs = async (query, limit = 10) => {
+  try {
+    const response = await api.get('/api/specs/search', { params: { query, limit } })
+    return response.data
+  } catch (error) {
+    throw error.response?.data || error.message
+  }
+}
+
+export const runSpecIndex = async (mode = 'incremental', specName = null) => {
+  try {
+    const response = await api.post('/api/spec-index/run', null, {
+      params: { mode, async_mode: true, ...(specName ? { spec_name: specName } : {}) },
+    })
+    return response.data
+  } catch (error) {
+    throw error.response?.data || error.message
+  }
+}
+
+export const getSpecIndexStatus = async (runId) => {
+  try {
+    const response = await api.get(`/api/spec-index/status/${encodeURIComponent(runId)}`)
+    return response.data
+  } catch (error) {
+    throw error.response?.data || error.message
+  }
+}
+
 export default api

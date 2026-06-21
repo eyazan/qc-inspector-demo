@@ -44,3 +44,36 @@ def ready() -> dict:
     }
     all_ready = checks["ocr"].get("reachable", False) and checks["llm"].get("reachable", False)
     return {"status": "ready" if all_ready else "degraded", "checks": checks}
+
+
+@router.get("/api/system/config", tags=["health"])
+def system_config() -> dict:
+    """Non-secret config summary for the System Health screen. NEVER returns
+    tokens, passwords, or certificate contents — only what is safe to display."""
+    return {
+        "app": {"name": settings.app_name, "version": settings.app_version},
+        "environment": settings.environment,
+        "providers": {
+            "layout": settings.active_layout_provider,
+            "ocr": settings.active_ocr_provider,
+            "llm": settings.active_llm_provider,
+            "sap": settings.active_sap_provider or "(local fallback)",
+            "spec_store": settings.active_spec_store,
+        },
+        "endpoints": {
+            "ocr_base_url": settings.ocr_service_url or None,
+            "llm_base_url": settings.llm_base_url or None,
+            "sap_spec_endpoint": settings.sap_spec_endpoint or None,
+        },
+        "spec_indexing": {
+            "network_root": str(settings.spec_network_root),
+            "store_db": str(settings.spec_store_db_path),
+            "schedule": settings.spec_index_schedule or "(disabled in-app)",
+            "default_mode": settings.spec_index_mode,
+        },
+        "performance": {
+            "page_parallelism": settings.page_parallelism,
+            "ocr_batch_size": settings.ocr_batch_size,
+            "ocr_max_workers": settings.ocr_max_concurrency,
+        },
+    }

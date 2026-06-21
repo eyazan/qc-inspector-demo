@@ -34,6 +34,26 @@ def spec_index_status(run_id: str) -> dict:
     return job.to_dict()
 
 
+@router.get("/specs")
+def list_specs(limit: int = 200) -> dict:
+    """List indexed specs (slim view for the Spec Index screen)."""
+    store = get_spec_store()
+    rows = store.list_specs()[:limit]
+    results = [
+        {
+            "id": r.get("id"),
+            "spec_no": r.get("spec_no"),
+            "revision": r.get("revision"),
+            "status": r.get("status"),
+            "file_path": r.get("file_path"),
+            "content_hash": (r.get("content_hash") or "")[:12],
+            "indexed_at": r.get("indexed_at"),
+        }
+        for r in rows
+    ]
+    return {"count": len(results), "results": results}
+
+
 @router.get("/specs/search")
 def search_specs(query: str = Query(...), limit: int = 10) -> dict:
     matches = get_spec_store().search(query, limit=limit)

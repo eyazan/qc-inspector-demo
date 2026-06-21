@@ -7,6 +7,8 @@ import ComparisonResults from './pages/ComparisonResults'
 import InspectorReport from './pages/InspectorReport'
 import Navbar from './components/Navbar'
 import ComparisonPreview from './pages/ComparisonPreview'
+import SpecIndex from './pages/SpecIndex'
+import SystemHealth from './pages/SystemHealth'
 
 const SESSION_STORAGE_KEYS = {
   VENDOR_FILES: 'ocr_vendor_files',
@@ -152,6 +154,8 @@ function App() {
           <Route path="/comparison-results" element={<ComparisonResults />} />
           <Route path="/report/:id" element={<InspectorReport />} />
           <Route path="/report/:id/segments" element={<InspectorReport />} />
+          <Route path="/spec-index" element={<SpecIndex />} />
+          <Route path="/system-health" element={<SystemHealth />} />
         </Routes>
       </div>
     </Router>

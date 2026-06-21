@@ -9,6 +9,8 @@ export default function Navbar() {
         <Link to="/">Ana Sayfa</Link>
         <Link to="/pdf-upload">PDF Yükle</Link>
         <Link to="/comparison-results">Sonuçlar</Link>
+        <Link to="/spec-index">Spec İndeks</Link>
+        <Link to="/system-health">Sistem</Link>
       </div>
     </nav>
   )
