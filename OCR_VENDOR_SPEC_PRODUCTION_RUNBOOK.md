@@ -179,8 +179,12 @@ Never commit private keys (gitignored).
 - Phone-photos-of-a-monitor inputs make DocLayout pick up screen UI; real scanned
   PDFs are clean. The pipeline degrades gracefully (failed OCR → empty region,
   failed LLM → regex/fallback) without crashing.
-- Postgres/S3/Celery providers are interface-ready; SQLite/local-FS/in-process are
-  the defaults.
+- Postgres/Celery providers are interface-ready; SQLite/in-process are the defaults.
+- S3/MinIO artifact storage is wired: with `ACTIVE_OBJECT_STORE=s3` every run
+  artifact is mirrored to the store and the PDF/report serve+read paths fall back
+  to it when a replica lacks the local file — no `/api/*` change. Pure-S3 (no
+  local disk) multi-run *history* still needs a shared volume or an
+  `ObjectStore.list(prefix)` migration (glob-based listing is FS-bound).
 
 ## 18. Troubleshooting checklist
 

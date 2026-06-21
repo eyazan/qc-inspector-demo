@@ -24,10 +24,79 @@ class StorageService:
         self._output = settings.output_path
         self._static_mount = settings.static_mount_path
         self._ensure_dirs()
+        self._mirror_store = self._init_mirror_store()
 
     def _ensure_dirs(self) -> None:
         for path in (self._input_spec, self._input_vendor, self._output):
             path.mkdir(parents=True, exist_ok=True)
+
+    # ---- Object-store mirror (S3/MinIO) ---------------------------------
+    # Run artifacts are always written to the local FS (so every existing read,
+    # glob, and serve path keeps working unchanged). When ACTIVE_OBJECT_STORE is
+    # a remote store, the same bytes are additionally pushed to it under a
+    # run-relative key, and serve/read paths fall back to it when the local file
+    # is absent — so a stateless replica can serve a run created by another.
+    def _init_mirror_store(self):
+        try:
+            from app.repositories.object_store import get_object_store
+
+            store = get_object_store()
+            return store if getattr(store, "name", "local") != "local" else None
+        except Exception:  # noqa: BLE001 - never let storage init fail on this
+            logger.exception("Object store init failed; artifact mirroring disabled")
+            return None
+
+    def _rel_key(self, target: Path) -> str:
+        return Path(target).resolve().relative_to(self._output.resolve()).as_posix()
+
+    def _mirror(self, target: Path, data: bytes) -> None:
+        if not self._mirror_store:
+            return
+        try:
+            self._mirror_store.put(self._rel_key(target), data)
+        except Exception:  # noqa: BLE001 - mirror is best-effort, never fatal
+            logger.exception("Artifact mirror failed for %s", target)
+
+    def _write_text(self, target: Path, text: str) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        self._mirror(target, text.encode("utf-8"))
+
+    def _write_bytes(self, target: Path, data: bytes) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        self._mirror(target, data)
+
+    def _read_text(self, target: Path) -> Optional[str]:
+        """Local-first, then object-store fallback for fixed-key artifacts."""
+        if target.exists():
+            return target.read_text(encoding="utf-8")
+        if self._mirror_store:
+            try:
+                return self._mirror_store.get(self._rel_key(target)).decode("utf-8")
+            except Exception:  # noqa: BLE001
+                return None
+        return None
+
+    def read_pdf_bytes(self, run_id: str, is_spec: bool) -> Optional[tuple[bytes, str]]:
+        """PDF bytes + filename for serving: local file first, else object store
+        (key reconstructed from the run's pdfs/{spec,vendor} subdir)."""
+        path = self.spec_pdf_file(run_id) if is_spec else self.vendor_pdf_file(run_id)
+        if path is not None:
+            return path.read_bytes(), path.name
+        if not self._mirror_store:
+            return None
+        subdir = "pdfs/spec" if is_spec else "pdfs/vendor"
+        meta = self.read_metadata(run_id) or {}
+        recorded = meta.get("spec_pdf_path" if is_spec else "vendor_pdf_path") or ""
+        name = Path(recorded).name
+        if not name:
+            return None
+        try:
+            data = self._mirror_store.get(f"{run_id}/{subdir}/{name}")
+            return data, name
+        except Exception:  # noqa: BLE001
+            return None
 
     def save_upload(self, filename: str, data: bytes, is_spec: bool) -> Path:
         target_dir = self._input_spec if is_spec else self._input_vendor
@@ -68,44 +137,39 @@ class StorageService:
     def copy_pdf_into_run(self, run_id: str, source: Path, is_spec: bool) -> str:
         subdir = "pdfs/spec" if is_spec else "pdfs/vendor"
         target = self.run_path(run_id) / subdir / source.name
-        shutil.copy2(source, target)
+        self._write_bytes(target, Path(source).read_bytes())
         return f"{self._static_mount}/{run_id}/{subdir}/{source.name}"
 
     def save_ocr(self, run_id: str, name: str, regions: list[dict], is_spec: bool) -> None:
         subdir = "spec" if is_spec else "vendor"
         target = self.run_path(run_id) / subdir / f"{name}.json"
-        target.write_text(json.dumps(regions, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._write_text(target, json.dumps(regions, ensure_ascii=False, indent=2))
 
     def save_segment_report(self, run_id: str, index: int, content: str) -> str:
         filename = f"segment_{index}.md"
         target = self.run_path(run_id) / "comparison" / filename
-        target.write_text(content, encoding="utf-8")
+        self._write_text(target, content)
         return filename
 
     def save_final_report(self, run_id: str, content: str) -> str:
         target = self.run_path(run_id) / "reports" / FINAL_REPORT_FILENAME
-        target.write_text(content, encoding="utf-8")
+        self._write_text(target, content)
         return FINAL_REPORT_FILENAME
 
     def save_final_report_json(self, run_id: str, report: dict) -> str:
         target = self.run_path(run_id) / "reports" / FINAL_REPORT_JSON_FILENAME
-        target.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        self._write_text(target, json.dumps(report, ensure_ascii=False, indent=2))
         return FINAL_REPORT_JSON_FILENAME
 
     def read_final_report_json(self, run_id: str) -> Optional[dict]:
         target = self.run_path(run_id) / "reports" / FINAL_REPORT_JSON_FILENAME
-        if not target.exists():
-            return None
-        return json.loads(target.read_text(encoding="utf-8"))
+        text = self._read_text(target)
+        return json.loads(text) if text is not None else None
 
     def save_segment_findings(self, run_id: str, index: int, findings: dict) -> str:
         filename = f"segment_{index}.json"
         target = self.run_path(run_id) / "comparison" / filename
-        target.write_text(
-            json.dumps(findings, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        self._write_text(target, json.dumps(findings, ensure_ascii=False, indent=2))
         return filename
 
     def build_inspector_report(self, run_id: str) -> Optional[dict]:
@@ -142,7 +206,7 @@ class StorageService:
             )
 
         narrative_path = self.run_path(run_id) / "reports" / FINAL_REPORT_FILENAME
-        content = narrative_path.read_text(encoding="utf-8") if narrative_path.exists() else None
+        content = self._read_text(narrative_path)
 
         return {
             "id": run_id,
@@ -175,13 +239,12 @@ class StorageService:
 
     def write_metadata(self, run_id: str, metadata: dict) -> None:
         target = self.run_path(run_id) / METADATA_FILENAME
-        target.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._write_text(target, json.dumps(metadata, ensure_ascii=False, indent=2))
 
     def read_metadata(self, run_id: str) -> Optional[dict]:
         target = self.run_path(run_id) / METADATA_FILENAME
-        if not target.exists():
-            return None
-        return json.loads(target.read_text(encoding="utf-8"))
+        text = self._read_text(target)
+        return json.loads(text) if text is not None else None
 
     def list_runs(self) -> list[str]:
         if not self._output.exists():
@@ -221,12 +284,13 @@ class StorageService:
         if metadata is None:
             return None
         report_path = self.run_path(run_id) / "reports" / FINAL_REPORT_FILENAME
-        if not report_path.exists():
+        content = self._read_text(report_path)
+        if content is None:
             return None
         return {
             "id": run_id,
             "type": "final_aggregation",
-            "content": report_path.read_text(encoding="utf-8"),
+            "content": content,
             "filename": FINAL_REPORT_FILENAME,
         }
 
@@ -238,12 +302,13 @@ class StorageService:
         for segment in metadata.get("segments", []):
             if str(segment.get("index")) == index:
                 report_path = self.run_path(run_id) / "comparison" / segment["filename"]
-                if not report_path.exists():
+                content = self._read_text(report_path)
+                if content is None:
                     return None
                 return {
                     "id": report_id,
                     "type": "segment",
-                    "content": report_path.read_text(encoding="utf-8"),
+                    "content": content,
                     "filename": segment["filename"],
                 }
         return None
@@ -267,7 +332,7 @@ class StorageService:
 
     def _segment_item(self, run_id: str, metadata: dict, segment: dict) -> dict:
         report_path = self.run_path(run_id) / "comparison" / segment["filename"]
-        content = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
+        content = self._read_text(report_path) or ""
         return {
             "id": f"{run_id}{SEGMENT_MARKER}{segment['index']}",
             "document_type": segment.get("doc_type"),
@@ -304,20 +369,18 @@ class StorageService:
         """Yuklemeyi dogrudan run klasorune kaydet (Asama 1; input klasoru yerine)."""
         subdir = "pdfs/spec" if is_spec else "pdfs/vendor"
         target_dir = self.run_path(run_id) / subdir
-        target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / filename
-        target.write_bytes(data)
+        self._write_bytes(target, data)
         return str(target)
 
     def save_preview(self, run_id: str, preview: dict) -> None:
         target = self.run_path(run_id) / "preview.json"
-        target.write_text(json.dumps(preview, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._write_text(target, json.dumps(preview, ensure_ascii=False, indent=2))
 
     def read_preview(self, run_id: str) -> Optional[dict]:
         target = self.run_path(run_id) / "preview.json"
-        if not target.exists():
-            return None
-        return json.loads(target.read_text(encoding="utf-8"))
+        text = self._read_text(target)
+        return json.loads(text) if text is not None else None
 
     def update_preview(self, run_id: str, **fields) -> dict:
         preview = self.read_preview(run_id) or {}
@@ -341,10 +404,8 @@ class StorageService:
 
     def copy_spec_pdf_into_run(self, run_id: str, source: Path) -> str:
         """Bulunan spec PDF'ini run'a kopyala (onizleme sag sutun icin)."""
-        target_dir = self.run_path(run_id) / "pdfs/spec"
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / source.name
-        shutil.copy2(source, target)
+        target = self.run_path(run_id) / "pdfs/spec" / source.name
+        self._write_bytes(target, Path(source).read_bytes())
         return str(target)
 
     def save_vendor_ocr_regions(self, run_id: str, name: str, regions: list[dict]) -> None:
@@ -353,7 +414,7 @@ class StorageService:
     def save_job_artifact(self, run_id: str, filename: str, obj: dict) -> str:
         """Write a job-root JSON artifact (comparison_result.json, job_metadata.json)."""
         target = self.run_path(run_id) / filename
-        target.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._write_text(target, json.dumps(obj, ensure_ascii=False, indent=2))
         return filename
 
     def save_ocr_pages(self, run_id: str, regions: list[dict]) -> dict:
@@ -364,7 +425,6 @@ class StorageService:
         document summary.
         """
         pages_dir = self.run_path(run_id) / "vendor" / "pages"
-        pages_dir.mkdir(parents=True, exist_ok=True)
         by_page: dict[int, list[dict]] = {}
         for r in regions:
             by_page.setdefault(r.get("page_number", 0), []).append(r)
@@ -378,8 +438,9 @@ class StorageService:
                 "region_count": len(by_page[page_number]),
                 "regions": by_page[page_number],
             }
-            (pages_dir / f"page_{page_number}.json").write_text(
-                json.dumps(page_doc, ensure_ascii=False, indent=2), encoding="utf-8"
+            self._write_text(
+                pages_dir / f"page_{page_number}.json",
+                json.dumps(page_doc, ensure_ascii=False, indent=2),
             )
             page_summaries.append(
                 {"page_number": page_number, "region_count": len(by_page[page_number])}
@@ -392,8 +453,9 @@ class StorageService:
             "total_regions": len(regions),
             "pages": page_summaries,
         }
-        (self.run_path(run_id) / "vendor" / "document.json").write_text(
-            json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8"
+        self._write_text(
+            self.run_path(run_id) / "vendor" / "document.json",
+            json.dumps(document, ensure_ascii=False, indent=2),
         )
         return document
 

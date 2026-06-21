@@ -239,14 +239,15 @@ Errors everywhere: `{status:"error",stage,message,details}` with STAGES enum.
 
 ---
 
-## 12. Test inventory (56)
+## 12. Test inventory (60)
 
 PO zero-pad · IoU/dedup · JSON repair · resilient client (retry/exhaust/breaker) ·
 OCR engine wire-contract + batch isolation + auth · OCR service contract ·
 provider/config switching + aliases · job submit/dead-letter/cancel · object store ·
-SAP provider selection + parsing (stubbed transport) · report contract + status
-mapping + override · per-page artifacts (both pages, all files) · metrics/health ·
-spec hash/revision change.
+artifact mirror + serve/read fallback from store · SAP provider selection + parsing
+(stubbed transport) · report contract + status mapping + override · per-page
+artifacts (both pages, all files) · metrics/health + system-config non-secret +
+specs-list shape · spec hash/revision change.
 
 ---
 
@@ -256,9 +257,15 @@ spec hash/revision change.
   transport — set `SAP_SPEC_SERVICE_BASE_URL` to exercise live.
 - **Runs/findings file-based** (relational `RunRepository`/Postgres = next).
 - **Job queue in-process** (Celery/Redis = drop-in via `ACTIVE_JOB_QUEUE`).
-- **Object store**: artifacts still written to FS directly in the pipeline; migrate
-  writes through `ObjectStore` for S3.
+- **Object store**: run artifacts write to local FS and, when `ACTIVE_OBJECT_STORE`
+  is remote (s3/minio), mirror to the store under run-relative keys; PDF/report
+  serve + read paths fall back to the store when the local file is absent (a
+  stateless replica can serve another replica's run) — no `/api/*` contract change.
+  Remaining for *pure* S3 (no local disk): the glob-based cross-run listing
+  (`list_runs`/`list_comparison_results`) still scans local FS, so multi-run
+  history needs a shared volume or an `ObjectStore.list(prefix)` migration.
 - **Single-file spec index is synchronous** inside lookup (could be a job).
 - **OCR proxy timeout** on huge regions (cap tokens / H200 endpoint).
-- **Frontend**: polling (no WS); missing spec-index-status + config-health screens.
+- **Frontend**: polling (no WS). Spec-index + system-health/config screens added
+  (`/spec-index`, `/system-health`); a live job-monitor view is still open.
 - **DocLayout single-thread** (CPU); a DocLayout service would lift the local bound.
