@@ -25,6 +25,12 @@ async def lifespan(app: FastAPI):
     settings.spec_source_dir.mkdir(parents=True, exist_ok=True)
     settings.spec_index_dir.mkdir(parents=True, exist_ok=True)
     settings.spec_output_dir.mkdir(parents=True, exist_ok=True)
+    # Fail-fast config check for the selected providers (prompt Section 11).
+    problems = settings.validate_for_providers()
+    for p in problems:
+        logger.error("CONFIG: %s", p)
+    if problems and settings.environment == "production":
+        raise RuntimeError("Invalid production configuration: " + "; ".join(problems))
     try:
         from app.services.scheduler import shutdown_scheduler, start_scheduler
 

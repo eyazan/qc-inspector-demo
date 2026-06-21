@@ -398,8 +398,12 @@ class StorageService:
         if not vendor_dir.exists():
             return out
         for jf in sorted(vendor_dir.glob("*.json")):
+            if jf.name == "document.json":
+                continue  # document summary is a dict, not a region list
             try:
-                out.extend(json.loads(jf.read_text(encoding="utf-8")))
+                data = json.loads(jf.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    out.extend(data)
             except Exception:  # noqa: BLE001
                 continue
         return out

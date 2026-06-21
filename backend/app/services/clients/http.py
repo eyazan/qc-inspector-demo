@@ -22,12 +22,13 @@ logger = get_logger(__name__)
 _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
 
-def build_client(timeout_seconds: int) -> httpx.Client:
-    """Plain client (TLS/mTLS from config). Kept for backward compatibility."""
+def build_client(timeout_seconds: int, verify=None, cert=None) -> httpx.Client:
+    """HTTP client with per-call TLS. `verify` is a CA-bundle path, True, or
+    False (per-service from config); defaults to the global TLS option."""
     return httpx.Client(
         timeout=httpx.Timeout(float(timeout_seconds)),
-        verify=settings.tls_verify_option,
-        cert=settings.llm_tls_cert,
+        verify=settings.tls_verify_option if verify is None else verify,
+        cert=cert if cert is not None else settings.llm_tls_cert,
     )
 
 
@@ -86,6 +87,8 @@ def post_json(
     headers: dict | None = None,
     timeout_seconds: int | None = None,
     retries: int | None = None,
+    verify=None,
+    cert=None,
 ) -> dict:
     """POST JSON with retries + circuit breaker. Returns parsed JSON.
 
@@ -103,7 +106,7 @@ def post_json(
     last_err: Exception | None = None
     for attempt in range(max_retries + 1):
         try:
-            with build_client(timeout) as client:
+            with build_client(timeout, verify=verify, cert=cert) as client:
                 resp = client.post(url, json=payload, headers=headers or {})
             if resp.status_code in _RETRYABLE_STATUS:
                 raise httpx.HTTPStatusError(

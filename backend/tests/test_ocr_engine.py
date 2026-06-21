@@ -11,7 +11,7 @@ from app.services.ocr.ocr_engine import OcrEngine, _auth_headers
 
 
 def _mock(handler):
-    def _factory(timeout_seconds):
+    def _factory(timeout_seconds, verify=None, cert=None):
         return httpx.Client(transport=httpx.MockTransport(handler), timeout=timeout_seconds)
     return _factory
 

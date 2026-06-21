@@ -67,32 +67,43 @@ class Settings(BaseSettings):
     layout_score_threshold: float = 0.10  # dusuk esik -> daha cok bolge
 
     # --- OCR (remote service, OpenAI-compatible). New names + legacy aliases. ---
-    ocr_service_url: str = "http://localhost:8102"
+    ocr_service_url: str = Field(
+        default="http://localhost:8102",
+        validation_alias=AliasChoices("ocr_service_url", "ocr_remote_base_url"),
+    )
     ocr_recognize_path: str = "/v1/chat/completions"
     ocr_timeout_seconds: int = Field(
         default=1800, validation_alias=AliasChoices("ocr_timeout_seconds", "ocr_timeout")
     )
     ocr_max_concurrency: int = Field(
-        default=4, validation_alias=AliasChoices("ocr_max_concurrency", "max_concurrency")
+        default=4,
+        validation_alias=AliasChoices(
+            "ocr_max_concurrency", "max_concurrency", "ocr_max_workers", "ocr_remote_max_concurrency"
+        ),
     )
     ocr_batch_size: int = 4
     ocr_bearer_key: str = Field(
         default="",
-        validation_alias=AliasChoices("ocr_bearer_key", "ocr_service_bearer_token"),
+        validation_alias=AliasChoices(
+            "ocr_bearer_key", "ocr_service_bearer_token", "ocr_remote_bearer_token"
+        ),
     )
     ocr_model_name: str = "paddleocr-vl-16"
 
     # --- LLM (remote service, OpenAI-compatible). New names + legacy aliases. ---
     llm_base_url: str = Field(
         default="http://localhost:8000/v1",
-        validation_alias=AliasChoices("llm_base_url", "llm_service_url"),
+        validation_alias=AliasChoices("llm_base_url", "llm_service_url", "llm_remote_base_url"),
     )
     llm_model: str = Field(
-        default="qwen3", validation_alias=AliasChoices("llm_model", "llm_model_name")
+        default="qwen3",
+        validation_alias=AliasChoices("llm_model", "llm_model_name", "llm_remote_model"),
     )
     llm_api_key: str = Field(
         default="not-needed",
-        validation_alias=AliasChoices("llm_api_key", "llm_service_bearer_token"),
+        validation_alias=AliasChoices(
+            "llm_api_key", "llm_service_bearer_token", "llm_remote_bearer_token"
+        ),
     )
     llm_temperature: float = 0.0
     llm_max_tokens: int = 8192
@@ -125,6 +136,44 @@ class Settings(BaseSettings):
     circuit_breaker_reset_seconds: int = 30
     spec_lookup_url: str = ""
 
+    # ==================================================================
+    # Company deployment (prompt Section 11): per-service TLS/CA bundle,
+    # environment, base URLs, performance. New names alias the existing
+    # fields where possible so current code keeps working unchanged.
+    # ==================================================================
+    environment: str = "local"                 # local | production
+    backend_base_url: str = "http://localhost:8002"
+    frontend_base_url: str = "http://localhost:3000"
+    output_root: Optional[Path] = None         # overrides <data_root>/output if set
+
+    # Shared AI-service TLS default (used when a per-service one is unset)
+    ai_service_ca_bundle: Optional[str] = None
+    ai_service_verify_tls: bool = True
+
+    # Per-service TLS (CA bundle path + verify flag) — company internal CA
+    ocr_remote_ca_bundle: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("ocr_remote_ca_bundle", "ai_service_ca_bundle")
+    )
+    ocr_remote_verify_tls: bool = Field(
+        default=True, validation_alias=AliasChoices("ocr_remote_verify_tls", "ai_service_verify_tls")
+    )
+    llm_remote_ca_bundle: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("llm_remote_ca_bundle", "ai_service_ca_bundle")
+    )
+    llm_remote_verify_tls: bool = Field(
+        default=True, validation_alias=AliasChoices("llm_remote_verify_tls", "ai_service_verify_tls")
+    )
+    sap_spec_service_bearer_token: str = ""
+    sap_spec_service_ca_bundle: Optional[str] = None
+    sap_spec_service_verify_tls: bool = True
+
+    # Performance / concurrency (prompt Section 8)
+    doclayout_max_workers: int = 1             # paddlex is thread-affine -> keep 1
+    page_render_max_workers: int = 2
+    page_parallelism: bool = True              # OCR pages concurrently
+    spec_index_batch_size: int = 8
+    spec_index_db_url: str = ""                # optional Postgres URL for spec store
+
     pdf_render_dpi: int = 150
     borderline_threshold_ratio: float = 0.10
 
@@ -134,11 +183,20 @@ class Settings(BaseSettings):
     spec_source: str = "local"  # "sap" | "local"
     # SAP endpoint: .env'de SAP_SPEC_ENDPOINT veya PO_API_BASE_URL (gercek servis adi)
     sap_spec_endpoint: str = Field(
-        default="", validation_alias=AliasChoices("sap_spec_endpoint", "po_api_base_url")
+        default="",
+        validation_alias=AliasChoices(
+            "sap_spec_endpoint", "po_api_base_url", "sap_spec_service_base_url"
+        ),
     )
-    sap_spec_read_path: str = "/read-text"
+    sap_spec_read_path: str = Field(
+        default="/read-text",
+        validation_alias=AliasChoices("sap_spec_read_path", "sap_spec_service_endpoint"),
+    )
     sap_spec_timeout_seconds: int = Field(
-        default=150, validation_alias=AliasChoices("sap_spec_timeout_seconds", "po_api_timeout")
+        default=150,
+        validation_alias=AliasChoices(
+            "sap_spec_timeout_seconds", "po_api_timeout", "sap_spec_service_timeout_seconds"
+        ),
     )
     sap_api_user: str = Field(
         default="", validation_alias=AliasChoices("sap_api_user", "po_api_user")
@@ -168,9 +226,20 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Provider selection (Section 6) — swap a model/provider via .env only.
     # ------------------------------------------------------------------
-    active_layout_provider: str = "paddlex_doclayout"   # local on every machine
-    active_ocr_provider: str = "paddleocr_vl"           # paddleocr_vl (remote) | paddleocr_vl_local
-    active_llm_provider: str = "openai_compatible"      # any OpenAI-compatible endpoint
+    active_layout_provider: str = Field(
+        default="paddlex_doclayout",
+        validation_alias=AliasChoices("active_layout_provider", "doclayout_provider"),
+    )
+    # paddleocr_vl (remote GPU service) | paddleocr_vl_local (local in-process)
+    active_ocr_provider: str = Field(
+        default="paddleocr_vl",
+        validation_alias=AliasChoices("active_ocr_provider", "ocr_provider"),
+    )
+    # openai_compatible (remote GPU/LLM service)
+    active_llm_provider: str = Field(
+        default="openai_compatible",
+        validation_alias=AliasChoices("active_llm_provider", "llm_provider"),
+    )
     active_spec_store: str = "sqlite"                    # sqlite | postgres
     active_spec_lookup_strategy: str = "sap_then_local_store"
 
@@ -198,7 +267,8 @@ class Settings(BaseSettings):
     spec_network_root: str = Field(
         default="data/spec_store/mock_specs",
         validation_alias=AliasChoices(
-            "spec_network_root", "network_share_path", "spec_docs_unc_path", "spec_docs_folder"
+            "spec_network_root", "network_share_path", "spec_network_path",
+            "spec_docs_unc_path", "spec_docs_folder",
         ),
     )
     spec_store_backend: str = "sqlite"
@@ -267,6 +337,49 @@ class Settings(BaseSettings):
         if self.tls_ca_cert_path:
             return str(self.tls_ca_cert_path)
         return self.tls_verify
+
+    @staticmethod
+    def _verify_opt(ca_bundle, verify_flag, fallback):
+        """httpx verify: CA-bundle path str if set, else the verify bool."""
+        if ca_bundle:
+            return str(ca_bundle)
+        if verify_flag is False:
+            return False
+        return fallback
+
+    @property
+    def ocr_tls_verify(self):
+        return self._verify_opt(self.ocr_remote_ca_bundle, self.ocr_remote_verify_tls, self.tls_verify_option)
+
+    @property
+    def llm_tls_verify(self):
+        return self._verify_opt(self.llm_remote_ca_bundle, self.llm_remote_verify_tls, self.tls_verify_option)
+
+    @property
+    def sap_tls_verify(self):
+        return self._verify_opt(self.sap_spec_service_ca_bundle, self.sap_spec_service_verify_tls, self.tls_verify_option)
+
+    @property
+    def output_dir(self) -> Path:
+        """Vendor job artifacts root. OUTPUT_ROOT overrides <data_root>/output."""
+        return Path(self.output_root) if self.output_root else self.output_path
+
+    def validate_for_providers(self) -> list[str]:
+        """Fail-fast: return a list of human-readable config problems for the
+        selected providers (prompt Section 11). Empty list = OK."""
+        problems: list[str] = []
+        if self.active_ocr_provider == "paddleocr_vl" and not self.ocr_service_url:
+            problems.append("OCR_PROVIDER=paddleocr_vl (remote) requires OCR_REMOTE_BASE_URL/OCR_SERVICE_URL")
+        if self.active_llm_provider == "openai_compatible" and not self.llm_base_url:
+            problems.append("LLM_PROVIDER=openai_compatible requires LLM_REMOTE_BASE_URL/LLM_SERVICE_URL")
+        if self.active_sap_provider == "real" and not self.sap_spec_endpoint:
+            problems.append("ACTIVE_SAP_PROVIDER=real requires SAP_SPEC_SERVICE_BASE_URL")
+        if self.environment == "production":
+            if self.active_ocr_provider == "paddleocr_vl" and not self.ocr_bearer_key:
+                problems.append("production OCR requires OCR_REMOTE_BEARER_TOKEN")
+            if not self.sap_spec_endpoint:
+                problems.append("production requires SAP_SPEC_SERVICE_BASE_URL")
+        return problems
 
 
 @lru_cache

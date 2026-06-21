@@ -69,6 +69,7 @@ class OcrEngine:
             self._payload(region_image_png),
             headers=_auth_headers(),
             timeout_seconds=self._timeout,
+            verify=settings.ocr_tls_verify,
         )
         return _parse_response(data)
 

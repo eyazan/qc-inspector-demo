@@ -9,7 +9,7 @@ from app.services.clients.http import RemoteServiceError, post_json
 
 
 def _mock_build_client(handler):
-    def _factory(timeout_seconds):
+    def _factory(timeout_seconds, verify=None, cert=None):
         return httpx.Client(transport=httpx.MockTransport(handler), timeout=timeout_seconds)
     return _factory
 

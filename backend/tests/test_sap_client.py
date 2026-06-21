@@ -34,7 +34,7 @@ def _patch_build_client(monkeypatch, payload):
     client = _FakeClient(payload)
 
     @contextlib.contextmanager
-    def fake_build_client(timeout):
+    def fake_build_client(timeout, verify=None, cert=None):
         yield client
 
     monkeypatch.setattr(sap_module, "build_client", fake_build_client)

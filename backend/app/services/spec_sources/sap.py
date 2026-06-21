@@ -98,19 +98,25 @@ class SapSpecSource(SpecSource):
                     return result
         return SpecResult(status="not_found")
 
-    def _post(self, body: dict, ctx: str) -> dict | None:
-        """SAP'a POST. Sertifika/TLS ortak build_client ile (mTLS cert + CA)."""
+    def _auth_header(self) -> str:
+        """Bearer token if configured (SAP_SPEC_SERVICE_BEARER_TOKEN), else Basic."""
+        if settings.sap_spec_service_bearer_token:
+            return f"Bearer {settings.sap_spec_service_bearer_token}"
         token = base64.b64encode(
             f"{self._user}:{self._password}".encode("utf-8")
         ).decode("ascii")
+        return f"Basic {token}"
+
+    def _post(self, body: dict, ctx: str) -> dict | None:
+        """SAP'a POST. Per-service TLS (SAP_SPEC_SERVICE_CA_BUNDLE/VERIFY_TLS)."""
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": f"Basic {token}",
+            "Authorization": self._auth_header(),
         }
         logger.info("SAP istek | url=%s | %s", self._url, ctx)
         try:
-            with build_client(self._timeout) as client:
+            with build_client(self._timeout, verify=settings.sap_tls_verify) as client:
                 response = client.post(self._url, json=body, headers=headers)
         except Exception as err:  # noqa: BLE001
             logger.error("SAP baglanti/istek hatasi (%s): %s", ctx, err)

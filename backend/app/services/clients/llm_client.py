@@ -35,6 +35,7 @@ class LlmClient:
             headers["Authorization"] = f"Bearer {settings.llm_api_key}"
 
         data = post_json(
-            self._endpoint, payload, headers=headers, timeout_seconds=self._timeout_seconds
+            self._endpoint, payload, headers=headers, timeout_seconds=self._timeout_seconds,
+            verify=settings.llm_tls_verify,
         )
         return data["choices"][0]["message"]["content"]
