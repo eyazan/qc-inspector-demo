@@ -59,6 +59,31 @@ def test_artifacts_mirrored_and_served_from_store(tmp_path):
     assert data == b"%PDF-1.4 vendor" and name == "vendor.pdf"
 
 
+def test_cross_run_history_from_store(tmp_path):
+    """list_runs / list_comparison_results see runs that exist only in the store
+    (pure-S3 replica with no local copy)."""
+    st = _storage_with_mirror(tmp_path)
+    run_id = st.create_run()
+    st.write_metadata(run_id, {"display_name": "PO-XYZ", "timestamp": "t"})
+    st.save_final_report_json(run_id, {"run_id": run_id, "findings": []})
+
+    # Wipe ALL local output: only the store retains the run.
+    shutil.rmtree(st.run_path(run_id))
+
+    assert run_id in st.list_runs()
+    results = st.list_comparison_results()
+    assert any(r["id"] == run_id and r["display_name"] == "PO-XYZ" for r in results)
+
+
+def test_object_store_list_prefix(tmp_path):
+    store = LocalFsObjectStore(root=tmp_path, mount="/files")
+    store.put("run_a/reports/final_report.json", b"{}")
+    store.put("run_a/metadata.json", b"{}")
+    store.put("run_b/metadata.json", b"{}")
+    assert set(store.list("run_a")) == {"run_a/reports/final_report.json", "run_a/metadata.json"}
+    assert {k.split("/", 1)[0] for k in store.list("")} == {"run_a", "run_b"}
+
+
 def test_mirror_disabled_no_remote_writes(tmp_path):
     """With no mirror store (local default), nothing is pushed and reads still
     work straight off the FS."""

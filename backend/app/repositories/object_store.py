@@ -32,6 +32,11 @@ class ObjectStore(ABC):
     @abstractmethod
     def url(self, key: str) -> str: ...
 
+    @abstractmethod
+    def list(self, prefix: str = "") -> list[str]:
+        """Return all object keys under prefix (POSIX-style, store-root-relative)."""
+        ...
+
 
 class LocalFsObjectStore(ObjectStore):
     name = "local"
@@ -68,6 +73,17 @@ class LocalFsObjectStore(ObjectStore):
 
     def url(self, key: str) -> str:
         return f"{self._mount.rstrip('/')}/objects/{key}"
+
+    def list(self, prefix: str = "") -> list[str]:
+        base = self._path(prefix) if prefix else self._root
+        if not base.exists():
+            return []
+        root = self._root.resolve()
+        return sorted(
+            p.resolve().relative_to(root).as_posix()
+            for p in base.rglob("*")
+            if p.is_file()
+        )
 
 
 class S3ObjectStore(ObjectStore):  # pragma: no cover - future drop-in
@@ -110,6 +126,13 @@ class S3ObjectStore(ObjectStore):  # pragma: no cover - future drop-in
     def url(self, key):
         base = (settings.s3_endpoint_url or "").rstrip("/")
         return f"{base}/{self._bucket}/{key}" if base else f"s3://{self._bucket}/{key}"
+
+    def list(self, prefix=""):
+        keys: list[str] = []
+        paginator = self._client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            keys.extend(obj["Key"] for obj in page.get("Contents", []))
+        return sorted(keys)
 
 
 def get_object_store() -> ObjectStore:

@@ -247,9 +247,19 @@ class StorageService:
         return json.loads(text) if text is not None else None
 
     def list_runs(self) -> list[str]:
-        if not self._output.exists():
-            return []
-        runs = [p.name for p in self._output.iterdir() if p.is_dir()]
+        """Run ids from the local FS, unioned with run ids discovered in the
+        object store (so a stateless replica sees runs created elsewhere)."""
+        runs: set[str] = set()
+        if self._output.exists():
+            runs.update(p.name for p in self._output.iterdir() if p.is_dir())
+        if self._mirror_store:
+            try:
+                for key in self._mirror_store.list(""):
+                    first = key.split("/", 1)[0]
+                    if first:
+                        runs.add(first)
+            except Exception:  # noqa: BLE001 - listing is best-effort
+                logger.exception("Object store run listing failed")
         return sorted(runs, reverse=True)
 
     def list_comparison_results(self) -> list[dict]:
