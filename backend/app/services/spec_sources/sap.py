@@ -36,25 +36,46 @@ class SapSpecSource(SpecSource):
 
     # ---------------- public ----------------
     def fetch(self, po_number=None, po_item=None, material=None) -> SpecResult:
+        """Spec metni + (mumkunse) spec kodu getir.
+
+        Oncelik spec KODU olan sonuctadir: PO+item ile metin dondu ama icinde
+        spec kodu yoksa, kod bulmak icin malzeme ile tekrar denenir. Kod hic
+        bulunamasa bile gelen spec metni BIRAKILMAZ (held -> donulur).
+        """
         po_number = (po_number or "").strip()
         po_item = (po_item or "").strip()
         material = (material or "").strip()
 
+        held: SpecResult | None = None  # spec kodu olmayan ilk basarili metin
+
+        def consider(r: SpecResult) -> SpecResult | None:
+            nonlocal held
+            if r.status == "success" and (r.spec_text or "").strip():
+                if r.spec_name:  # ideal: hem metin hem spec kodu
+                    return r
+                if held is None:  # metin var ama kod yok -> yedek olarak tut
+                    held = r
+            return None
+
         # 1) PO + item
         if po_number and po_item:
-            r = self._query_po(po_number, zero_pad_item(po_item))
-            if r.status == "success":
-                return r
-        # 2) Malzeme (IMatnr)
+            win = consider(self._query_po(po_number, zero_pad_item(po_item)))
+            if win:
+                return win
+        # 2) Malzeme (IMatnr) — ozellikle PO+item kodsuz donduyse kod bulmak icin
         if material:
-            r = self._query_material(material)
-            if r.status == "success":
-                return r
+            win = consider(self._query_material(material))
+            if win:
+                return win
         # 3) PO-only (item zorunlu degilse ISasno ile dene)
         if po_number and not po_item:
-            r = self._query_po(po_number, "")
-            if r.status == "success":
-                return r
+            win = consider(self._query_po(po_number, ""))
+            if win:
+                return win
+
+        # Spec kodu bulunamadi ama metin geldiyse onu birakma.
+        if held is not None:
+            return held
         return SpecResult(status="not_found")
 
     # ---------------- SAP istekleri ----------------

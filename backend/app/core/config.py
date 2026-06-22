@@ -165,7 +165,11 @@ class Settings(BaseSettings):
     )
     sap_spec_service_bearer_token: str = ""
     sap_spec_service_ca_bundle: Optional[str] = None
-    sap_spec_service_verify_tls: bool = True
+    # SAP spec endpoint does not require certificate verification by default
+    # (the company endpoint is reached without a cert). Set
+    # SAP_SPEC_SERVICE_VERIFY_TLS=true (and/or SAP_SPEC_SERVICE_CA_BUNDLE) to
+    # turn verification back on without any code change.
+    sap_spec_service_verify_tls: bool = False
 
     # Performance / concurrency (prompt Section 8)
     doclayout_max_workers: int = 1             # paddlex is thread-affine -> keep 1
@@ -280,6 +284,10 @@ class Settings(BaseSettings):
     spec_reindex_if_revision_changed: bool = True
     spec_index_mode: str = "incremental"                 # full | incremental
     spec_index_schedule: str = ""                        # cron expr (informational)
+    # Force OCR for EVERY spec PDF (digital or scanned). When False, digital PDFs
+    # with a usable text layer are read natively and only scanned ones fall back
+    # to OCR. Default True per requirement: run all spec PDFs through OCR.
+    spec_force_ocr: bool = True
 
     # --- Relational store (runs / findings / overrides; SQLite -> Postgres) ---
     database_url: str = "sqlite:///data/qc_inspector.db"

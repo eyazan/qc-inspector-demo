@@ -272,6 +272,19 @@ class StorageService:
         return results
 
     def _final_result_item(self, run_id: str, metadata: dict) -> dict:
+        # Enrich the list row with PO/material + a compliance summary so the
+        # Sonuçlar screen can render a structured, at-a-glance view.
+        from app.core.constants import to_frontend_status
+
+        preview = self.read_preview(run_id) or {}
+        report = self.read_final_report_json(run_id) or {}
+        raw_summary = report.get("summary") or {}
+        summary: dict[str, int] = {}
+        for key, count in raw_summary.items():
+            fe = to_frontend_status(key)
+            summary[fe] = summary.get(fe, 0) + int(count or 0)
+        total_findings = report.get("total_findings") or sum(summary.values())
+
         return {
             "id": run_id,
             "type": "final_aggregation",
@@ -279,6 +292,12 @@ class StorageService:
             "spec_file": ", ".join(metadata.get("spec_files", [])) or None,
             "po_info": metadata.get("display_name"),
             "display_name": metadata.get("display_name"),
+            "po_number": preview.get("po_number") or metadata.get("po_number"),
+            "po_item": preview.get("po_item") or metadata.get("po_item"),
+            "material": preview.get("material") or metadata.get("material"),
+            "spec_no": report.get("spec_no") or preview.get("spec_no"),
+            "summary": summary,
+            "total_findings": total_findings,
             "timestamp": metadata.get("timestamp"),
             "spec_pdf_path": metadata.get("spec_pdf_path"),
             "vendor_pdf_path": metadata.get("vendor_pdf_path"),

@@ -25,17 +25,46 @@ _SPEC_RE = re.compile(r"\b(" + "|".join(_SPEC_FAMILIES) + r")\b")
 _REVISION_RE = re.compile(r"\bREV(?:ISION)?\.?\s*([A-Z]{1,3}|\d{1,3})\b", re.IGNORECASE)
 _SECTION_RE = re.compile(r"^\s*(\d+(?:\.\d+){0,3})\s+([^\d\n][^\n]{1,90})")
 
+# Label-based spec number: most spec docs print "Spec No / Specification No /
+# Specification Number" on the first page with the code next to it. This is the
+# most general signal (works for arbitrary specs, not just known families).
+_SPEC_LABEL_RE = re.compile(
+    r"\bSPEC(?:IFICATION)?\.?\s*(?:NO\.?|NUMBER|NUM\.?|#)\s*[:.#\-]?\s*"
+    r"([A-Za-z0-9][A-Za-z0-9\-_./]{1,39})",
+    re.IGNORECASE,
+)
+
 
 def normalize(spec_no: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", (spec_no or "").upper())
 
 
+def extract_spec_no_from_label(text: str) -> str | None:
+    """Spec code printed next to a 'Spec No / Specification No' label, if any.
+
+    Requires a digit in the value (spec numbers carry digits) to avoid matching
+    stray words after the label.
+    """
+    m = _SPEC_LABEL_RE.search(text or "")
+    if not m:
+        return None
+    cand = m.group(1).strip().rstrip(".,;:-/")
+    if re.search(r"\d", cand) and 2 <= len(cand) <= 40:
+        return cand
+    return None
+
+
 def extract_identity(text: str, file_name: str = "") -> tuple[str | None, str | None]:
-    """Best-effort (spec_no, revision) from spec text, falling back to filename."""
-    spec_no = None
-    m = _SPEC_RE.search(text or "")
-    if m:
-        spec_no = re.sub(r"\s+", "", m.group(1))
+    """Best-effort (spec_no, revision) from spec text, falling back to filename.
+
+    Priority: explicit 'Spec No' label on the page -> known spec-code family
+    (AMS/ABS/ASTM...) -> spec code in the filename.
+    """
+    spec_no = extract_spec_no_from_label(text)
+    if not spec_no:
+        m = _SPEC_RE.search(text or "")
+        if m:
+            spec_no = re.sub(r"\s+", "", m.group(1))
     if not spec_no and file_name:
         fm = _SPEC_RE.search(file_name)
         if fm:

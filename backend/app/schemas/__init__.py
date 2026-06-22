@@ -63,6 +63,12 @@ class ComparisonResultItem(BaseModel):
     spec_file: Optional[str] = None
     po_info: Optional[str] = None
     display_name: Optional[str] = None
+    po_number: Optional[str] = None
+    po_item: Optional[str] = None
+    material: Optional[str] = None
+    spec_no: Optional[str] = None
+    summary: dict[str, int] = {}
+    total_findings: int = 0
     timestamp: Optional[str] = None
     spec_pdf_path: Optional[str] = None
     vendor_pdf_path: Optional[str] = None

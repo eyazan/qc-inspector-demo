@@ -43,7 +43,12 @@ def _digits_after_label(text: str, label_pattern: str, max_window: int = 60) -> 
     return _collapse_digits(m.group(1)) if m else ""
 
 
-_MATERIAL = re.compile(r"\b([A-Z]{2,}[A-Z0-9]*\s*\([^)]+\)\s*[A-Z0-9]*)", re.IGNORECASE)
+# Malzeme: KOD (xxx) [ek] biciminde; opsiyonel olarak sonda "/ NN" eki de olabilir
+# (orn. "b50k26 (nuk) / 50"). Slash eki yoksa da eslesir.
+_MATERIAL = re.compile(
+    r"\b([A-Z]{2,}[A-Z0-9]*\s*\([^)]+\)\s*[A-Z0-9]*(?:\s*/\s*[A-Z0-9]+)?)",
+    re.IGNORECASE,
+)
 
 
 def parse_vendor_ids(first_page_text: str, file_name: str = "") -> VendorIds:

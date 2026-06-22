@@ -22,18 +22,27 @@ class SpecOcrPipelineService:
         self._ocr_pipeline = ocr_pipeline
 
     def extract_pages(self, pdf_path: Path) -> tuple[list[str], str]:
-        """Return (pages_text, source) where source is 'native' or 'ocr'."""
-        native = self._native_pages(pdf_path)
-        total = sum(len(p) for p in native)
-        if native and total >= _MIN_NATIVE_CHARS_PER_PAGE * len(native):
-            return native, "native"
+        """Return (pages_text, source) where source is 'native' or 'ocr'.
+
+        When SPEC_FORCE_OCR is set, every spec PDF (digital or scanned) is run
+        through OCR. Otherwise it is native-first with an OCR fallback for
+        scanned PDFs. If OCR is needed but no pipeline is available, it degrades
+        to native text.
+        """
+        from app.core.config import settings
+
+        if not settings.spec_force_ocr:
+            native = self._native_pages(pdf_path)
+            total = sum(len(p) for p in native)
+            if native and total >= _MIN_NATIVE_CHARS_PER_PAGE * len(native):
+                return native, "native"
 
         if self._ocr_pipeline is None:
             logger.warning(
-                "Native metin yetersiz ve ocr_pipeline yok (%s); native donduruluyor",
+                "OCR gerekiyor ama ocr_pipeline yok (%s); native metne donuluyor",
                 Path(pdf_path).name,
             )
-            return native, "native"
+            return self._native_pages(pdf_path), "native"
 
         return self._ocr_pages(pdf_path), "ocr"
 
