@@ -82,6 +82,12 @@ class Settings(BaseSettings):
         ),
     )
     ocr_batch_size: int = 4
+    # Comma-separated DocLayout region types to SKIP OCR for (perf). Default
+    # empty -> OCR every region (miss nothing). Operators may set e.g.
+    # "figure,image" AFTER confirming such regions carry no text in their docs.
+    # Skipped regions still appear in artifacts (empty text); only the remote
+    # OCR call is avoided.
+    ocr_skip_region_types: str = ""
     ocr_bearer_key: str = Field(
         default="",
         validation_alias=AliasChoices(

@@ -1,0 +1,32 @@
+{
+  "run_id": "run_20260622_221924",
+  "summary": {
+    "NOT_COVERED_IN_THIS_DOCUMENT": 1
+  },
+  "total_findings": 1,
+  "findings": [
+    {
+      "finding_id": "run_20260622_221924::F0001",
+      "parameter": "Tensile",
+      "result": "NOT_COVERED_IN_THIS_DOCUMENT",
+      "severity": "MEDIUM",
+      "spec_section": "3.5",
+      "spec_evidence": "min 130 ksi",
+      "vendor_page": 1,
+      "vendor_region_ids": [
+        "page1_region0"
+      ],
+      "vendor_evidence": null,
+      "rationale": "x",
+      "overrides": [
+        {
+          "action": "reject",
+          "new_status": "NON_COMPLIANT",
+          "note": "n"
+        }
+      ],
+      "effective_result": "NON_COMPLIANT",
+      "override_note": "n"
+    }
+  ]
+}

@@ -11,7 +11,7 @@ import fitz
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services.ocr.models import LayoutRegion, OcrRegion
+from app.services.ocr.models import OcrRegion
 
 if TYPE_CHECKING:
     from app.providers.layout.base import LayoutProvider
@@ -37,8 +37,33 @@ class OcrPipeline:
         self._dpi = settings.pdf_render_dpi
         self._zoom = self._dpi / 72.0
         self._max_workers = settings.ocr_max_concurrency
+        # Region types to skip OCR for (perf). Empty by default -> OCR everything.
+        self._skip_types = {
+            t.strip().lower()
+            for t in (settings.ocr_skip_region_types or "").split(",")
+            if t.strip()
+        }
         # Per-run dedup counts (before/after per page), surfaced to the report.
         self.dedup_stats: dict = {"before": 0, "after": 0, "removed": 0, "pages": []}
+
+    def _ocr_kept_regions(self, page, page_png: bytes, kept: list) -> list[OcrRegion]:
+        """OCR a page's kept regions, cropping from the already-rendered page PNG
+        (no re-rasterization). Regions whose type is in the skip set keep their
+        place in the output with empty text but are NOT sent to OCR — so nothing
+        is dropped from the structure and no work is wasted on non-text regions.
+        Returns OcrRegion list aligned to `kept` order. Parallelism unchanged:
+        recognize_batch still runs the page's region crops concurrently."""
+        targets = [r for r in kept if r.region_type.lower() not in self._skip_types]
+        crops = [self._crop_png(page_png, r.bbox, page) for r in targets]
+        results = self._ocr_engine.recognize_batch(crops)
+        by_id = {t.region_id: res for t, res in zip(targets, results)}
+        out: list[OcrRegion] = []
+        for r in kept:
+            text, conf = by_id.get(r.region_id, ("", None))
+            out.append(
+                OcrRegion(r.region_id, text, r.bbox, r.page_number, r.region_type, conf)
+            )
+        return out
 
     def run(self, pdf_path: Path, max_pages: int | None = None) -> list[OcrRegion]:
         document = fitz.open(str(pdf_path))
@@ -56,7 +81,7 @@ class OcrPipeline:
             layout_regions = self._layout_detector.detect(page_png, page_number)
             kept, stats = self._dedup.deduplicate(layout_regions)
             self._accumulate_stats(page_number, stats)
-            page_results = self._recognize_regions(page, kept)
+            page_results = self._ocr_kept_regions(page, page_png, kept)
             all_regions.extend(page_results)
 
         document.close()
@@ -117,13 +142,18 @@ class OcrPipeline:
             layout_regions = self._layout_detector.detect(page_png, page_number)
             t2 = time.monotonic()
             kept, stats = self._dedup.deduplicate(layout_regions)
-            crops = [self._crop_region(page, r.bbox) for r in kept]
+            # Crop from the rendered PNG (no re-rasterization); skip-typed regions
+            # are excluded from OCR but kept in the output (handled in helper).
+            targets = [r for r in kept if r.region_type.lower() not in self._skip_types]
+            crops = [self._crop_png(page_png, r.bbox, page) for r in targets]
         t3 = time.monotonic()
         ocr_results = self._ocr_engine.recognize_batch(crops)
         t4 = time.monotonic()
 
+        by_id = {t.region_id: res for t, res in zip(targets, ocr_results)}
         regions: list[OcrRegion] = []
-        for r, (text, conf) in zip(kept, ocr_results):
+        for r in kept:
+            text, conf = by_id.get(r.region_id, ("", None))
             regions.append(OcrRegion(r.region_id, text, r.bbox, r.page_number, r.region_type, conf))
 
         self._write_page_artifacts(pages_dir, page_number, page_png, layout_regions, kept, regions)
@@ -186,23 +216,27 @@ class OcrPipeline:
                 )
                 return b""
 
-    def _recognize_regions(
-        self, page, layout_regions: list[LayoutRegion]
-    ) -> list[OcrRegion]:
-        crops = [self._crop_region(page, region.bbox) for region in layout_regions]
-        # Batch the whole page's regions through the provider (remote providers
-        # run these concurrently / batched; local ones fall back to sequential).
-        results = self._ocr_engine.recognize_batch(crops)
-        out: list[OcrRegion] = []
-        for region, (text, confidence) in zip(layout_regions, results):
-            out.append(
-                OcrRegion(
-                    region_id=region.region_id,
-                    text=text,
-                    bbox=region.bbox,
-                    page_number=region.page_number,
-                    region_type=region.region_type,
-                    confidence=confidence,
-                )
-            )
-        return out
+    def _crop_png(self, page_png: bytes, bbox: list[float], page=None) -> bytes:
+        """Crop a region from the already-rendered page PNG (same DPI -> pixel
+        identical to a re-render, but no extra rasterization). Falls back to the
+        proven fitz re-render on any degenerate bbox / decode issue so a region
+        is never silently lost."""
+        import io
+
+        from PIL import Image
+
+        try:
+            img = Image.open(io.BytesIO(page_png))
+            w, h = img.size
+            x0, y0, x1, y1 = (int(round(c)) for c in bbox)
+            x0, x1 = max(0, min(x0, w)), max(0, min(x1, w))
+            y0, y1 = max(0, min(y0, h)), max(0, min(y1, h))
+            if x1 - x0 < 2 or y1 - y0 < 2:
+                raise ValueError("degenerate crop")
+            buf = io.BytesIO()
+            img.crop((x0, y0, x1, y1)).save(buf, format="PNG")
+            return buf.getvalue()
+        except Exception:  # noqa: BLE001 - safe fallback to original behavior
+            if page is not None:
+                return self._crop_region(page, bbox)
+            return b""

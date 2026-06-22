@@ -38,6 +38,35 @@ def _make_pdf(path, pages=2):
     doc.close()
 
 
+def test_skip_region_types_keeps_region_but_skips_ocr(tmp_path, monkeypatch):
+    """OCR_SKIP_REGION_TYPES skips the OCR call for those types but KEEPS the
+    region in the output (empty text) — nothing is dropped, parallelism intact."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ocr_skip_region_types", "table", raising=False)
+
+    pdf = tmp_path / "v.pdf"
+    _make_pdf(pdf, pages=1)
+    pipe = OcrPipeline(_FakeLayout(), _FakeOcr())
+    regions, _ = pipe.run_with_artifacts(pdf, tmp_path / "pages")
+
+    by_type = {r.region_type: r for r in regions}
+    assert set(by_type) == {"text", "table"}          # both regions present
+    assert by_type["text"].text == "ABC 123"          # text region OCR'd
+    assert by_type["table"].text == ""                # table region skipped (no OCR)
+
+
+def test_default_no_skip_ocrs_everything(tmp_path, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ocr_skip_region_types", "", raising=False)
+    pdf = tmp_path / "v.pdf"
+    _make_pdf(pdf, pages=1)
+    pipe = OcrPipeline(_FakeLayout(), _FakeOcr())
+    regions, _ = pipe.run_with_artifacts(pdf, tmp_path / "pages")
+    assert all(r.text == "ABC 123" for r in regions)   # default: nothing skipped
+
+
 def test_run_with_artifacts(tmp_path):
     pdf = tmp_path / "v.pdf"
     _make_pdf(pdf, pages=2)
