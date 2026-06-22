@@ -38,6 +38,22 @@ def _make_pdf(path, pages=2):
     doc.close()
 
 
+def test_run_processes_all_pages_parallel(tmp_path, monkeypatch):
+    """Spec OCR uses OcrPipeline.run(); it must process ALL pages (page-parallel)
+    and return regions for every page, order-stable."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "page_parallelism", True, raising=False)
+    pdf = tmp_path / "spec.pdf"
+    _make_pdf(pdf, pages=3)
+    pipe = OcrPipeline(_FakeLayout(), _FakeOcr())
+    regions = pipe.run(pdf)
+
+    assert {r.page_number for r in regions} == {1, 2, 3}
+    assert len(regions) == 6  # 3 pages x 2 regions
+    assert pipe.dedup_stats["before"] == 6
+
+
 def test_skip_region_types_keeps_region_but_skips_ocr(tmp_path, monkeypatch):
     """OCR_SKIP_REGION_TYPES skips the OCR call for those types but KEEPS the
     region in the output (empty text) — nothing is dropped, parallelism intact."""

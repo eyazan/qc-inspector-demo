@@ -66,26 +66,43 @@ class OcrPipeline:
         return out
 
     def run(self, pdf_path: Path, max_pages: int | None = None) -> list[OcrRegion]:
-        document = fitz.open(str(pdf_path))
-        all_regions: list[OcrRegion] = []
-        self.dedup_stats = {"before": 0, "after": 0, "removed": 0, "pages": []}
-
-        page_count = document.page_count
+        """Plain region list (no per-page artifacts) — used by spec OCR. Pages
+        run concurrently when PAGE_PARALLELISM is on (same model as
+        run_with_artifacts: each worker opens its own fitz doc; DocLayout
+        serializes itself; region OCR batches overlap). Skip-types + PNG crop
+        (A/B) apply via the shared _ocr_kept_regions / _process_page_core."""
+        with fitz.open(str(pdf_path)) as document:
+            page_count = document.page_count
         if max_pages:
             page_count = min(max_pages, page_count)
+        self.dedup_stats = {"before": 0, "after": 0, "removed": 0, "pages": []}
 
-        for page_index in range(page_count):
-            page = document[page_index]
-            page_number = page_index + 1
+        indices = list(range(page_count))
+        if settings.page_parallelism and page_count > 1:
+            workers = max(1, min(settings.page_render_max_workers, page_count))
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="specpage") as ex:
+                results = list(ex.map(lambda i: self._process_page_core(pdf_path, i), indices))
+        else:
+            results = [self._process_page_core(pdf_path, i) for i in indices]
+
+        all_regions: list[OcrRegion] = []
+        for regions, stats, page_number in sorted(results, key=lambda r: r[2]):
+            all_regions.extend(regions)
+            self._accumulate_stats(page_number, stats)
+        return all_regions
+
+    def _process_page_core(self, pdf_path: Path, page_index: int):
+        """One page -> (regions, dedup_stats, page_number), no artifacts. Opens
+        its own fitz document (fitz is not thread-safe). Shares the A/B logic via
+        _ocr_kept_regions."""
+        page_number = page_index + 1
+        with fitz.open(str(pdf_path)) as doc:  # per-thread doc
+            page = doc[page_index]
             page_png = self._render_page(page)
             layout_regions = self._layout_detector.detect(page_png, page_number)
             kept, stats = self._dedup.deduplicate(layout_regions)
-            self._accumulate_stats(page_number, stats)
-            page_results = self._ocr_kept_regions(page, page_png, kept)
-            all_regions.extend(page_results)
-
-        document.close()
-        return all_regions
+            regions = self._ocr_kept_regions(page, page_png, kept)
+        return regions, stats, page_number
 
     def run_with_artifacts(
         self, pdf_path: Path, pages_dir: Path, max_pages: int | None = None
