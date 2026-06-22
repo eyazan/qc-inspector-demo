@@ -18,12 +18,44 @@ export default function ComparisonPreview() {
   const [compareStep, setCompareStep] = useState('')
   const pollRef = useRef(null)
 
+  // Resumable Stage-2 poller: reused by the Compare button AND on mount when a
+  // comparison is already running on the server (continue where you left off).
+  const startPolling = () => {
+    if (pollRef.current) clearInterval(pollRef.current)
+    setComparing(true)
+    const poll = async () => {
+      try {
+        const s = await axios.get(`${API_BASE_URL}/api/processing-status/${encodeURIComponent(runId)}`)
+        const st = s.data
+        setCompareStep(st.current_step || 'İşleniyor...')
+        if (!st.is_processing) {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+          if (st.status === 'failed') {
+            setError('Karşılaştırma sırasında hata oluştu.')
+            setComparing(false)
+          } else {
+            navigate(`/report/${encodeURIComponent(runId)}`)
+          }
+        }
+      } catch (e) { /* yut */ }
+    }
+    poll()
+    pollRef.current = setInterval(poll, POLL_MS)
+  }
+
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       try {
         const res = await axios.get(`${API_BASE_URL}/api/spec-preview/${encodeURIComponent(runId)}`)
         if (!cancelled) setPreview(res.data)
+        // Resume: if Stage-2 is still running (or already done) on the server,
+        // pick it up instead of showing a fresh "Karşılaştır" button.
+        const s = await axios.get(`${API_BASE_URL}/api/processing-status/${encodeURIComponent(runId)}`)
+        if (!cancelled) {
+          if (s.data?.is_processing) startPolling()
+          else if (s.data?.status === 'completed') navigate(`/report/${encodeURIComponent(runId)}`)
+        }
       } catch (err) {
         if (!cancelled) setError('Önizleme verisi alınamadı.')
       } finally {

@@ -7,6 +7,7 @@ import ErrorAlert from '../components/ErrorAlert'
 import { API_BASE_URL } from '../config'
 
 const POLLING_INTERVAL_MS = 3000
+const RUN_ID_KEY = 'ocr_run_id'
 const SESSION_STORAGE_KEYS = {
   VENDOR_FILES: 'ocr_vendor_files',
   PROCESSING_STATUS: 'ocr_processing_status',
@@ -46,6 +47,7 @@ const PdfUpload = () => {
   const [endTime, setEndTime] = useState(null)
   const timerIntervalRef = useRef(null)
   const checkIntervalRef = useRef(null)
+  const [resumeRun, setResumeRun] = useState(null) // {runId, target} paused/finished run to return to
   const [processingStatus, setProcessingStatus] = useState({
     is_processing: false,
     current_step: '',
@@ -75,6 +77,43 @@ const PdfUpload = () => {
     setProcessingStatus(restoredProcessingStatus)
   }, [])
 
+  // Resume on mount: if a run is still in progress on the server, re-attach the
+  // poller and show live progress (continue where you left off). If it already
+  // moved on (paused for preview / completed), surface a "return" banner instead
+  // of hijacking navigation.
+  useEffect(() => {
+    const rid = sessionStorage.getItem(RUN_ID_KEY)
+    if (!rid) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: status } = await axios.get(
+          `${API_BASE_URL}/api/processing-status/${encodeURIComponent(rid)}`
+        )
+        if (cancelled) return
+        if (status.is_processing) {
+          setRunId(rid)
+          saveProcessingStatus(status)
+          setStartTime(status.start_time ? new Date(status.start_time) : new Date())
+          setElapsedTime(status.elapsed_seconds || 0)
+          if (!timerIntervalRef.current) {
+            timerIntervalRef.current = setInterval(() => setElapsedTime((p) => p + 1), 1000)
+          }
+          beginPolling(rid)
+        } else if (status.status === 'awaiting_comparison') {
+          setResumeRun({ runId: rid, target: `/comparison-preview/${encodeURIComponent(rid)}`, label: 'Önizlemeye dön' })
+        } else if (status.status === 'completed') {
+          setResumeRun({ runId: rid, target: `/report/${encodeURIComponent(rid)}`, label: 'Raporu gör' })
+        } else {
+          sessionStorage.removeItem(RUN_ID_KEY) // idle/failed/unknown -> stale
+        }
+      } catch (err) {
+        /* server unreachable / unknown run -> ignore */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   const saveVendorFiles = (files) => {
     setVendorFiles(files)
     saveVendorFilesMetadata(Array.isArray(files) ? files : [])
@@ -92,7 +131,37 @@ const PdfUpload = () => {
 
   const saveRunId = (id) => {
     setRunId(id)
-    sessionStorage.setItem('ocr_run_id', id)
+    sessionStorage.setItem(RUN_ID_KEY, id)
+  }
+
+  // Resumable Stage-1 poller: re-attaches to a run by id (used on first start
+  // AND when returning to the page mid-process). On completion it routes to the
+  // preview screen, exactly like the original inline flow.
+  const beginPolling = (rid) => {
+    if (checkIntervalRef.current) clearInterval(checkIntervalRef.current)
+    const pollStatus = async () => {
+      try {
+        const { data: status } = await axios.get(
+          `${API_BASE_URL}/api/processing-status/${encodeURIComponent(rid)}`
+        )
+        saveProcessingStatus(status)
+        if (!status.is_processing) {
+          if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null }
+          if (checkIntervalRef.current) { clearInterval(checkIntervalRef.current); checkIntervalRef.current = null }
+          setEndTime(status.end_time ? new Date(status.end_time) : new Date())
+          if (status.status === 'failed') {
+            setError('Yükleme sırasında hata oluştu. Loglara bakın.')
+          } else {
+            sessionStorage.removeItem(RUN_ID_KEY) // preview screen owns the run now
+            navigate(`/comparison-preview/${encodeURIComponent(rid)}`)
+          }
+        }
+      } catch (err) {
+        console.error('Status poll error:', err)
+      }
+    }
+    pollStatus()
+    checkIntervalRef.current = setInterval(pollStatus, POLLING_INTERVAL_MS)
   }
 
   const onDrop = useCallback((acceptedFiles) => {
@@ -147,6 +216,8 @@ const PdfUpload = () => {
     sessionStorage.removeItem(SESSION_STORAGE_KEYS.VENDOR_FILES)
     sessionStorage.removeItem(SESSION_STORAGE_KEYS.SUMMARY)
     sessionStorage.removeItem(SESSION_STORAGE_KEYS.PROCESSING_STATUS)
+    sessionStorage.removeItem(RUN_ID_KEY)
+    setResumeRun(null)
   }
 
   const handleUpload = async () => {
@@ -210,49 +281,9 @@ const PdfUpload = () => {
         return
       }
 
-      const pollStatus = async () => {
-        try {
-          const statusResponse = await axios.get(
-            `${API_BASE_URL}/api/processing-status/${encodeURIComponent(newRunId)}`
-          )
-          const status = statusResponse.data
-          saveProcessingStatus(status)
-
-          if (!status.is_processing) {
-            if (timerIntervalRef.current) {
-              clearInterval(timerIntervalRef.current)
-              timerIntervalRef.current = null
-            }
-            setEndTime(status.end_time ? new Date(status.end_time) : new Date())
-
-            if (checkIntervalRef.current) {
-              clearInterval(checkIntervalRef.current)
-              checkIntervalRef.current = null
-            }
-
-            saveProcessingStatus({
-              ...status,
-              is_processing: false,
-              current_step: status.current_step || 'Yükleme tamamlandı',
-              progress: 100,
-            })
-
-            // Asama 1 bitti -> vendor+spec yan yana onizleme ekranina git.
-            // (Karsilastirma orada "Karsilastir" butonuyla baslar.)
-            if (status.status === 'failed') {
-              setError('Yükleme sırasında hata oluştu. Loglara bakın.')
-            } else {
-              navigate(`/comparison-preview/${encodeURIComponent(newRunId)}`)
-            }
-          }
-        } catch (err) {
-          console.error('Status poll error:', err)
-        }
-      }
-
-      pollStatus()
-      const statusInterval = setInterval(pollStatus, POLLING_INTERVAL_MS)
-      checkIntervalRef.current = statusInterval
+      // Asama 1'i takip et; bitince onizleme ekranina yonlendir. Baska sayfaya
+      // gidip donulse bile mount'taki resume efekti bu polling'i tekrar baslatir.
+      beginPolling(newRunId)
 
     } catch (err) {
       const errorMessage = err.response?.data?.detail || err.message || 'Dosya yükleme sırasında bir hata oluştu.'
@@ -297,6 +328,26 @@ const PdfUpload = () => {
       <p className="page-subtitle">Vendor dokümanını yükleyin; Spec SAP’tan otomatik alınır.</p>
 
       {error && <ErrorAlert message={error} onClose={() => setError(null)} />}
+
+      {resumeRun && !processingStatus.is_processing && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10,
+          padding: '12px 16px', marginBottom: 16, flexWrap: 'wrap',
+        }}>
+          <span style={{ color: '#1e40af', fontWeight: 500 }}>
+            Devam eden bir işleminiz var ({resumeRun.runId}). Kaldığınız yerden devam edebilirsiniz.
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="button button-primary" onClick={() => navigate(resumeRun.target)}>
+              {resumeRun.label}
+            </button>
+            <button className="button button-secondary" onClick={() => { sessionStorage.removeItem(RUN_ID_KEY); setResumeRun(null) }}>
+              Yoksay
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="dropzone-container">
         <div className="dropzone">
