@@ -24,11 +24,17 @@ _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
 def build_client(timeout_seconds: int, verify=None, cert=None) -> httpx.Client:
     """HTTP client with per-call TLS. `verify` is a CA-bundle path, True, or
-    False (per-service from config); defaults to the global TLS option."""
+    False (per-service from config); defaults to the global TLS option.
+
+    `cert` is the client (mTLS) certificate; when None NO client cert is sent.
+    The global mTLS cert is NOT auto-attached here so that callers which must
+    reach an endpoint WITHOUT a client cert (e.g. the SAP spec service) can do
+    so. Callers that need mTLS pass `cert` explicitly (post_json does this for
+    the OCR/LLM services)."""
     return httpx.Client(
         timeout=httpx.Timeout(float(timeout_seconds)),
         verify=settings.tls_verify_option if verify is None else verify,
-        cert=cert if cert is not None else settings.llm_tls_cert,
+        cert=cert,
     )
 
 
@@ -103,10 +109,15 @@ def post_json(
     if not breaker.allow():
         raise RemoteServiceError(f"Circuit open for {host}; not sending request")
 
+    # OCR/LLM internal services use the global mTLS client cert by default;
+    # callers can override with an explicit cert. (SAP calls build_client
+    # directly without a cert, so it never sends one.)
+    effective_cert = cert if cert is not None else settings.llm_tls_cert
+
     last_err: Exception | None = None
     for attempt in range(max_retries + 1):
         try:
-            with build_client(timeout, verify=verify, cert=cert) as client:
+            with build_client(timeout, verify=verify, cert=effective_cert) as client:
                 resp = client.post(url, json=payload, headers=headers or {})
             if resp.status_code in _RETRYABLE_STATUS:
                 raise httpx.HTTPStatusError(

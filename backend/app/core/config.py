@@ -215,10 +215,15 @@ class Settings(BaseSettings):
         default="", validation_alias=AliasChoices("spec_docs_unc_path", "spec_docs_folder")
     )
     spec_index_dir: Path = Path("data/specs_index")
-    spec_ocr_max_pages: int = 1             # spec OCR ilk N sayfa (0 -> tum)
+    # Spec OCR sayfa siniri YOK (0 -> tum sayfalar). Spec dokumaninin TAMAMI
+    # OCR'lanir; aktif spec pipeline'i zaten tum sayfalari isler.
+    spec_ocr_max_pages: int = 0             # 0 -> tum sayfalar
 
-    # --- Iki asamali akis: yukleme (Asama 1) ilk N sayfa OCR ---
-    upload_ocr_max_pages: int = 1           # 0 -> tum sayfalar
+    # --- Iki asamali akis ---
+    # Bu sinir SADECE Asama-1 onizleme/PO okumasi icindir (preview mantigi).
+    # Asama-2 (karsilastirma) ve spec indeksleme TUM sayfalari OCR'lar, sinir YOK.
+    # 0 -> Asama-1 de tum sayfalari OCR'lar (onizleme yavaslar).
+    upload_ocr_max_pages: int = 1           # 0 -> tum sayfalar (sadece onizleme)
 
     tls_ca_cert_path: Optional[Path] = None
     tls_client_cert_path: Optional[Path] = None

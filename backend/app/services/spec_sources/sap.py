@@ -129,15 +129,18 @@ class SapSpecSource(SpecSource):
         return f"Basic {token}"
 
     def _post(self, body: dict, ctx: str) -> dict | None:
-        """SAP'a POST. Per-service TLS (SAP_SPEC_SERVICE_CA_BUNDLE/VERIFY_TLS)."""
+        """SAP'a POST. Sertifikasiz gider: client cert YOK (cert=None) ve TLS
+        dogrulamasi SAP_SPEC_SERVICE_VERIFY_TLS ile (default kapali)."""
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "Authorization": self._auth_header(),
         }
-        logger.info("SAP istek | url=%s | %s", self._url, ctx)
+        verify = settings.sap_tls_verify
+        logger.info("SAP istek | url=%s | verify=%s | cert=yok | %s", self._url, verify, ctx)
         try:
-            with build_client(self._timeout, verify=settings.sap_tls_verify) as client:
+            # cert=None -> hicbir client sertifikasi gonderilmez
+            with build_client(self._timeout, verify=verify, cert=None) as client:
                 response = client.post(self._url, json=body, headers=headers)
         except Exception as err:  # noqa: BLE001
             logger.error("SAP baglanti/istek hatasi (%s): %s", ctx, err)
