@@ -52,11 +52,19 @@ class PipelineService:
             if not vendors:
                 return False, "Islenecek vendor PDF bulunamadi", None
 
+            # Process the MOST RECENTLY uploaded vendor PDF (not the alphabetically
+            # first), and drop any stale leftovers from a previous, un-compared
+            # upload so they can't shadow the new one in the preview.
+            vendor = max(vendors, key=lambda p: p.stat().st_mtime)
+            for stale in vendors:
+                if stale != vendor:
+                    stale.unlink(missing_ok=True)
+
             run_id = self._storage.create_run()
             state = get_run_state(run_id)
             state.begin(run_id)
             thread = threading.Thread(
-                target=self._run_upload, args=(run_id, vendors, seed or {}), daemon=True
+                target=self._run_upload, args=(run_id, [vendor], seed or {}), daemon=True
             )
             thread.start()
             return True, "Yukleme islemi baslatildi", run_id

@@ -155,6 +155,32 @@ def wired(tmp_path, monkeypatch):
     return ps, storage
 
 
+def test_start_upload_picks_newest_vendor_and_clears_stale(wired):
+    """A leftover (alphabetically-first) vendor PDF must NOT shadow a freshly
+    uploaded one: start_upload processes the newest by mtime and drops stale
+    leftovers — so the preview reflects the new document, not the old one."""
+    import os
+    import time
+
+    ps, storage = wired
+    pipeline = ps.PipelineService(storage)
+
+    old = storage._input_vendor / "aaa_old.pdf"   # sorts FIRST alphabetically
+    new = storage._input_vendor / "bbb_new.pdf"   # sorts second, newer mtime
+    _make_vendor_pdf(old, pages=1)
+    _make_vendor_pdf(new, pages=1)
+    os.utime(old, (time.time() - 1000, time.time() - 1000))  # make old clearly older
+
+    started, _msg, run_id = pipeline.start_upload(seed={})
+    assert started
+    _wait_idle(run_id)
+
+    vf = storage.vendor_pdf_file(run_id)
+    assert vf is not None and vf.name == "bbb_new.pdf"   # processed the NEW pdf
+    assert not old.exists()                              # stale leftover removed
+    assert new.exists()                                  # chosen one stays until compare
+
+
 def test_full_pipeline_e2e_smoke(wired):
     ps, storage = wired
     pipeline = ps.PipelineService(storage)
